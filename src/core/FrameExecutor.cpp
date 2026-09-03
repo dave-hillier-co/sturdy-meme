@@ -3,24 +3,24 @@
 #include "vulkan/QueueLock.h"
 #include <SDL3/SDL.h>
 
-bool FrameExecutor::init(VulkanContext* ctx, uint32_t frameCount) {
-    if (!ctx) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FrameExecutor::init: null VulkanContext");
-        return false;
-    }
-    vulkanContext_ = ctx;
-    if (!frameSync_.init(ctx->getRaiiDevice(), frameCount)) {
+FrameExecutor::FrameExecutor(ConstructToken, VulkanContext& ctx, TripleBuffering&& frameSync)
+    : frameSync_(std::move(frameSync)), vulkanContext_(&ctx) {}
+
+std::unique_ptr<FrameExecutor> FrameExecutor::create(VulkanContext& ctx, uint32_t frameCount) {
+    auto frameSync = TripleBuffering::create(ctx.getRaiiDevice(), frameCount);
+    if (!frameSync) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FrameExecutor::init: failed to create sync objects");
-        return false;
+        return nullptr;
     }
+    auto executor = std::make_unique<FrameExecutor>(ConstructToken{}, ctx, std::move(*frameSync));
     // Present-wait semaphores are sized to the swapchain image count, not the
     // frame-in-flight count (see TripleBuffering binary-semaphore notes).
-    if (!ensurePresentSemaphores()) {
+    if (!executor->ensurePresentSemaphores()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FrameExecutor::init: failed to create present semaphores");
-        return false;
+        return nullptr;
     }
     SDL_Log("FrameExecutor initialized (%u frames in flight)", frameCount);
-    return true;
+    return executor;
 }
 
 bool FrameExecutor::ensurePresentSemaphores() {
@@ -35,15 +35,10 @@ bool FrameExecutor::ensurePresentSemaphores() {
     return frameSync_.initPresentSemaphores(imageCount);
 }
 
-void FrameExecutor::destroy() {
-    frameSync_.destroy();
-    vulkanContext_ = nullptr;
-}
-
 FrameResult FrameExecutor::execute(const FrameBuilder& builder) {
     if (windowSuspended_) return FrameResult::Skipped;
 
-    VkExtent2D extent = vulkanContext_->getVkSwapchainExtent();
+    vk::Extent2D extent = vulkanContext_->getVkSwapchainExtent();
     if (extent.width == 0 || extent.height == 0) return FrameResult::Skipped;
 
     // A swapchain recreate (resize) can change the image count. The recreate
@@ -63,7 +58,7 @@ FrameResult FrameExecutor::execute(const FrameBuilder& builder) {
 
     // Build frame — caller records commands
     vk::CommandBuffer cmd = builder(imageIndex, frameIndex);
-    if (cmd == VK_NULL_HANDLE) {
+    if (!cmd) {
         frameSync_.advance();
         return FrameResult::Skipped;
     }
@@ -89,7 +84,7 @@ FrameResult FrameExecutor::acquireImage(uint32_t& imageIndex) {
     VkResult vkResult = vkAcquireNextImageKHR(
         device, swapchain, acquireTimeoutNs,
         frameSync_.currentImageAvailableSemaphore(),
-        VK_NULL_HANDLE, &imageIndex);
+        vk::Fence{}, &imageIndex);
 
     if (vkResult == VK_TIMEOUT || vkResult == VK_NOT_READY) {
         return FrameResult::Skipped;

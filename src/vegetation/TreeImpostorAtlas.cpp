@@ -25,47 +25,12 @@ std::unique_ptr<TreeImpostorAtlas> TreeImpostorAtlas::create(const InitInfo& inf
 }
 
 TreeImpostorAtlas::~TreeImpostorAtlas() {
-    if (device_ == VK_NULL_HANDLE) return;
-
-    vk::Device(device_).waitIdle();
-
-    // Cleanup leaf capture buffer (VMA-managed)
-    if (leafCaptureBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, leafCaptureBuffer_, leafCaptureAllocation_);
+    // Pre-existing device-idle rule kept (captures are fenced, but the atlas
+    // views may be bound by in-flight frames). Every Vulkan object is a RAII
+    // member released in reverse declaration order.
+    if (device_) {
+        vk::Device(device_).waitIdle();
     }
-
-    // Cleanup leaf quad mesh (VMA-managed)
-    if (leafQuadVertexBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, leafQuadVertexBuffer_, leafQuadVertexAllocation_);
-    }
-    if (leafQuadIndexBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, leafQuadIndexBuffer_, leafQuadIndexAllocation_);
-    }
-
-    // Cleanup array textures (VMA-managed images, RAII views)
-    // Clear RAII views first, then destroy VMA images
-    octaAlbedoArrayView_.reset();
-    octaNormalArrayView_.reset();
-
-    if (octaAlbedoArrayImage_ != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator_, octaAlbedoArrayImage_, octaAlbedoArrayAllocation_);
-    }
-    if (octaNormalArrayImage_ != VK_NULL_HANDLE) {
-        vmaDestroyImage(allocator_, octaNormalArrayImage_, octaNormalArrayAllocation_);
-    }
-
-    // Cleanup per-archetype atlas textures (VMA depth buffers, RAII views/framebuffers)
-    for (auto& atlas : atlasTextures_) {
-        atlas.framebuffer.reset();
-        atlas.albedoView.reset();
-        atlas.normalView.reset();
-        atlas.depthView.reset();
-        if (atlas.depthImage != VK_NULL_HANDLE) {
-            vmaDestroyImage(allocator_, atlas.depthImage, atlas.depthAllocation);
-        }
-    }
-
-    // RAII types (pipelines, render pass, etc.) are automatically cleaned up
 }
 
 bool TreeImpostorAtlas::initInternal(const InitInfo& info) {
@@ -129,14 +94,12 @@ bool TreeImpostorAtlas::createAtlasArrayTextures() {
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       reinterpret_cast<VkImage*>(&octaAlbedoArrayImage_), &octaAlbedoArrayAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaImage::create(allocator_, imageInfo, allocInfo, octaAlbedoArrayImage_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create octahedral albedo array image");
         return false;
     }
 
-    if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&imageInfo), &allocInfo,
-                       reinterpret_cast<VkImage*>(&octaNormalArrayImage_), &octaNormalArrayAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaImage::create(allocator_, imageInfo, allocInfo, octaNormalArrayImage_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create octahedral normal array image");
         return false;
     }
@@ -152,19 +115,22 @@ bool TreeImpostorAtlas::createAtlasArrayTextures() {
             .setBaseArrayLayer(0)
             .setLayerCount(maxArchetypes_));
 
-    viewInfo.setImage(octaAlbedoArrayImage_);
+    viewInfo.setImage(octaAlbedoArrayImage_.get());
     octaAlbedoArrayView_.emplace(*raiiDevice_, viewInfo);
 
-    viewInfo.setImage(octaNormalArrayImage_);
+    viewInfo.setImage(octaNormalArrayImage_.get());
     octaNormalArrayView_.emplace(*raiiDevice_, viewInfo);
 
     // Transition both array images to shader read optimal layout
-    vk::CommandBuffer cmd = (*raiiDevice_).allocateCommandBuffers(
+    // Keep the RAII command buffer alive for the whole scope; it frees itself
+    // on exit. Taking [0] out of the temporary vector would free it immediately.
+    auto cmdBuffers = raiiDevice_->allocateCommandBuffers(
         vk::CommandBufferAllocateInfo{}
             .setCommandPool(commandPool_)
             .setLevel(vk::CommandBufferLevel::ePrimary)
             .setCommandBufferCount(1)
-    )[0];
+    );
+    vk::CommandBuffer cmd = *cmdBuffers[0];
 
     cmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 
@@ -183,8 +149,8 @@ bool TreeImpostorAtlas::createAtlasArrayTextures() {
         .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
 
     std::array<vk::ImageMemoryBarrier, 2> barriers = {barrier, barrier};
-    barriers[0].setImage(octaAlbedoArrayImage_);
-    barriers[1].setImage(octaNormalArrayImage_);
+    barriers[0].setImage(octaAlbedoArrayImage_.get());
+    barriers[1].setImage(octaNormalArrayImage_.get());
 
     cmd.pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
@@ -207,7 +173,6 @@ bool TreeImpostorAtlas::createAtlasArrayTextures() {
         dev.destroyFence(fence);
     }
 
-    vk::Device(device_).freeCommandBuffers(commandPool_, cmd);
 
     SDL_Log("TreeImpostorAtlas: Created octahedral array textures (%dx%d, %d layers, %d views)",
             OctahedralAtlasConfig::ATLAS_WIDTH, OctahedralAtlasConfig::ATLAS_HEIGHT,
@@ -240,10 +205,10 @@ bool TreeImpostorAtlas::createAtlasResources(uint32_t archetypeIndex) {
             .setBaseArrayLayer(archetypeIndex)
             .setLayerCount(1));
 
-    viewInfo.setImage(octaAlbedoArrayImage_);
+    viewInfo.setImage(octaAlbedoArrayImage_.get());
     atlas.albedoView.emplace(*raiiDevice_, viewInfo);
 
-    viewInfo.setImage(octaNormalArrayImage_);
+    viewInfo.setImage(octaNormalArrayImage_.get());
     atlas.normalView.emplace(*raiiDevice_, viewInfo);
 
     // Create depth image (VMA-managed)
@@ -262,13 +227,12 @@ bool TreeImpostorAtlas::createAtlasResources(uint32_t archetypeIndex) {
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateImage(allocator_, reinterpret_cast<const VkImageCreateInfo*>(&depthImageInfo), &allocInfo,
-                       reinterpret_cast<VkImage*>(&atlas.depthImage), &atlas.depthAllocation, nullptr) != VK_SUCCESS) {
+    if (!VmaImage::create(allocator_, depthImageInfo, allocInfo, atlas.depthImage)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create depth image");
         return false;
     }
 
-    viewInfo.setImage(atlas.depthImage)
+    viewInfo.setImage(atlas.depthImage.get())
         .setFormat(vk::Format::eD32Sfloat)
         .setSubresourceRange(vk::ImageSubresourceRange{}
             .setAspectMask(vk::ImageAspectFlagBits::eDepth)
@@ -350,9 +314,8 @@ int32_t TreeImpostorAtlas::generateArchetype(
         vk::DeviceSize requiredSize = leafInstances.size() * sizeof(LeafInstanceGPU);
 
         if (requiredSize > leafCaptureBufferSize_) {
-            if (leafCaptureBuffer_ != VK_NULL_HANDLE) {
-                vmaDestroyBuffer(allocator_, leafCaptureBuffer_, leafCaptureAllocation_);
-            }
+            // Previous captures are fence-waited, so the old buffer can go now
+            leafCaptureBuffer_ = VmaBuffer{};
 
             auto bufferInfo = vk::BufferCreateInfo{}
                 .setSize(requiredSize)
@@ -361,17 +324,17 @@ int32_t TreeImpostorAtlas::generateArchetype(
             VmaAllocationCreateInfo allocInfo{};
             allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-            if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&leafCaptureBuffer_), &leafCaptureAllocation_, nullptr) != VK_SUCCESS) {
+            if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, leafCaptureBuffer_)) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeImpostorAtlas: Failed to create leaf capture buffer");
+                leafCaptureBufferSize_ = 0;
                 return -1;
             }
             leafCaptureBufferSize_ = requiredSize;
         }
 
-        void* data;
-        vmaMapMemory(allocator_, leafCaptureAllocation_, &data);
+        void* data = leafCaptureBuffer_.map();
         memcpy(data, leafInstances.data(), requiredSize);
-        vmaUnmapMemory(allocator_, leafCaptureAllocation_);
+        leafCaptureBuffer_.unmap();
 
         leafCaptureDescSet = descriptorPool_->allocateSingle(**leafCaptureDescriptorSetLayout_);
         if (leafCaptureDescSet != VK_NULL_HANDLE) {
@@ -385,7 +348,7 @@ int32_t TreeImpostorAtlas::generateArchetype(
                 .setImageView(barkNormal)
                 .setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
-            auto ssboInfo = makeBufferInfo(leafCaptureBuffer_);
+            auto ssboInfo = makeBufferInfo(leafCaptureBuffer_.get());
 
             DescriptorWriter()
                 .add(WriteBuilder::combinedImageSampler(0, leafImageInfo))
@@ -416,12 +379,15 @@ int32_t TreeImpostorAtlas::generateArchetype(
         .add(WriteBuilder::combinedImageSampler(1, normalInfo))
         .update(device_, captureDescSet);
 
-    vk::CommandBuffer cmd = (*raiiDevice_).allocateCommandBuffers(
+    // Keep the RAII command buffer alive for the whole scope; it frees itself
+    // on exit. Taking [0] out of the temporary vector would free it immediately.
+    auto cmdBuffers = raiiDevice_->allocateCommandBuffers(
         vk::CommandBufferAllocateInfo{}
             .setCommandPool(commandPool_)
             .setLevel(vk::CommandBufferLevel::ePrimary)
             .setCommandBufferCount(1)
-    )[0];
+    );
+    vk::CommandBuffer cmd = *cmdBuffers[0];
 
     cmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 
@@ -440,8 +406,8 @@ int32_t TreeImpostorAtlas::generateArchetype(
         .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
 
     std::array<vk::ImageMemoryBarrier, 2> preBarriers = {preBarrier, preBarrier};
-    preBarriers[0].setImage(octaAlbedoArrayImage_);
-    preBarriers[1].setImage(octaNormalArrayImage_);
+    preBarriers[0].setImage(octaAlbedoArrayImage_.get());
+    preBarriers[1].setImage(octaNormalArrayImage_.get());
 
     cmd.pipelineBarrier(
         vk::PipelineStageFlagBits::eFragmentShader,
@@ -492,7 +458,6 @@ int32_t TreeImpostorAtlas::generateArchetype(
         dev.destroyFence(fence);
     }
 
-    vk::Device(device_).freeCommandBuffers(commandPool_, cmd);
 
     TreeImpostorArchetype archetype;
     archetype.name = name;

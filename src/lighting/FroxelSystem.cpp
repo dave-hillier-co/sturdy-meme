@@ -57,36 +57,6 @@ FroxelSystem::FroxelSystem(ConstructToken, const InitInfo& info)
     initialized_ = true;
 }
 
-FroxelSystem::~FroxelSystem() {
-    if (!initInfo_.device) {
-        return;
-    }
-
-    destroyVolumeResources();
-
-    if (initInfo_.allocator) {
-        BufferUtils::destroyBuffers(initInfo_.allocator, uniformBuffers);
-    }
-
-    // RAII wrappers handle cleanup automatically
-    froxelUpdatePipeline_.reset();
-    integrationPipeline_.reset();
-    froxelPipelineLayout_.reset();
-    froxelDescriptorSetLayout_.reset();
-    volumeSampler_.reset();
-}
-
-void FroxelSystem::destroyVolumeResources() {
-    // RAII wrappers handle cleanup automatically
-    for (int i = 0; i < 2; i++) {
-        scatteringVolumeViews_[i].reset();
-        scatteringVolumes_[i] = ManagedImage();
-    }
-
-    integratedVolumeView_.reset();
-    integratedVolume_ = ManagedImage();
-}
-
 void FroxelSystem::resize(VkExtent2D newExtent) {
     extent_ = newExtent;
     // Froxel grid size is fixed, no need to recreate volumes
@@ -213,7 +183,7 @@ bool FroxelSystem::createDescriptorSetLayout() {
         .addStorageImage(VkShaderStageFlags(vk::ShaderStageFlagBits::eCompute))            // 5: Previous scattering
         .build();
 
-    if (rawLayout == VK_NULL_HANDLE) {
+    if (!rawLayout) {
         SDL_Log("Failed to create froxel descriptor set layout");
         return false;
     }
@@ -232,12 +202,28 @@ bool FroxelSystem::createDescriptorSetLayout() {
 }
 
 bool FroxelSystem::createUniformBuffers() {
-    return BufferUtils::PerFrameBufferBuilder()
-        .setAllocator(initInfo_.allocator)
-        .setFrameCount(initInfo_.framesInFlight)
+    auto bufferInfo = vk::BufferCreateInfo{}
         .setSize(sizeof(FroxelUniforms))
-        .setUsage(VkBufferUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer))
-        .build(uniformBuffers);
+        .setUsage(vk::BufferUsageFlagBits::eUniformBuffer)
+        .setSharingMode(vk::SharingMode::eExclusive);
+
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    uniformBuffers_.resize(initInfo_.framesInFlight);
+    uniformMapped_.assign(initInfo_.framesInFlight, nullptr);
+    for (uint32_t i = 0; i < initInfo_.framesInFlight; i++) {
+        if (!VmaBuffer::create(initInfo_.allocator, bufferInfo, allocInfo, uniformBuffers_[i])) {
+            SDL_Log("Failed to create per-frame buffer %u", i);
+            return false;
+        }
+        VmaAllocationInfo allocationInfo{};
+        vmaGetAllocationInfo(initInfo_.allocator, uniformBuffers_[i].getAllocation(), &allocationInfo);
+        uniformMapped_[i] = allocationInfo.pMappedData;
+    }
+    return true;
 }
 
 bool FroxelSystem::createDescriptorSets() {
@@ -252,7 +238,7 @@ bool FroxelSystem::createDescriptorSets() {
         DescriptorManager::SetWriter(initInfo_.device, froxelDescriptorSets[i])
             .writeStorageImage(0, **scatteringVolumeViews_[0])  // Current scattering volume (write target)
             .writeStorageImage(1, **integratedVolumeView_)      // Integrated volume
-            .writeBuffer(2, uniformBuffers.buffers[i], 0, sizeof(FroxelUniforms))
+            .writeBuffer(2, uniformBuffers_[i].get(), 0, sizeof(FroxelUniforms))
             .writeImage(3, initInfo_.shadowMapView, initInfo_.shadowSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
             .writeBuffer(4, initInfo_.lightBuffers[i], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .writeStorageImage(5, **scatteringVolumeViews_[1])  // History scattering volume (read for temporal)
@@ -326,7 +312,7 @@ void FroxelSystem::recordFroxelUpdate(vk::CommandBuffer cmd, uint32_t frameIndex
 
     // Update uniform buffer
     glm::mat4 viewProj = proj * view;
-    FroxelUniforms* ubo = static_cast<FroxelUniforms*>(uniformBuffers.mappedPointers[frameIndex]);
+    FroxelUniforms* ubo = static_cast<FroxelUniforms*>(uniformMapped_[frameIndex]);
     ubo->invViewProj = glm::inverse(viewProj);
     ubo->prevViewProj = prevViewProj;
 

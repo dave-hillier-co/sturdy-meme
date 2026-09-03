@@ -10,11 +10,15 @@
 #include <algorithm>
 #include <cmath>
 
-BaseHeightMap::~BaseHeightMap() {
-    cleanup();
+std::unique_ptr<BaseHeightMap> BaseHeightMap::create(const InitInfo& info, const LoadTileFunc& loadTileFunc) {
+    auto heightMap = std::make_unique<BaseHeightMap>(ConstructToken{});
+    if (!heightMap->initInternal(info, loadTileFunc)) {
+        return nullptr;
+    }
+    return heightMap;
 }
 
-void BaseHeightMap::init(const InitInfo& info) {
+bool BaseHeightMap::initInternal(const InitInfo& info, const LoadTileFunc& loadTileFunc) {
     raiiDevice_ = info.raiiDevice;
     device_ = info.device;
     allocator_ = info.allocator;
@@ -28,14 +32,8 @@ void BaseHeightMap::init(const InitInfo& info) {
     numLODLevels_ = info.numLODLevels;
 
     baseLOD_ = numLODLevels_ - 1;
-}
 
-void BaseHeightMap::cleanup() {
-    baseTiles_.clear();
-    heightMapCpuData_.clear();
-
-    heightMapView_.reset();
-    heightMapImage_.reset();
+    return loadBaseLODTiles(loadTileFunc);
 }
 
 bool BaseHeightMap::loadBaseLODTiles(const LoadTileFunc& loadTileFunc) {

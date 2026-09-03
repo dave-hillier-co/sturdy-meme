@@ -1,39 +1,22 @@
 #include "GrassTileResourcePool.h"
 #include <SDL3/SDL.h>
 
-GrassTileResourcePool::~GrassTileResourcePool() {
-    destroy();
-}
-
-bool GrassTileResourcePool::init(const InitInfo& info) {
-    device_ = info.device;
-    descriptorPool_ = info.descriptorPool;
-    framesInFlight_ = info.framesInFlight;
-    computeDescriptorSetLayout_ = info.computeDescriptorSetLayout;
-
-    if (!device_ || !descriptorPool_ || !computeDescriptorSetLayout_) {
+std::unique_ptr<GrassTileResourcePool> GrassTileResourcePool::create(const InitInfo& info) {
+    if (!info.device || !info.descriptorPool || !info.computeDescriptorSetLayout) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "GrassTileResourcePool: Invalid initialization parameters");
-        return false;
+        return nullptr;
     }
 
-    initialized_ = true;
-    return true;
-}
-
-void GrassTileResourcePool::destroy() {
-    // Descriptor sets are managed by the pool, no need to free individually
-    tileDescriptorSets_.clear();
-    initialized_ = false;
+    auto pool = std::make_unique<GrassTileResourcePool>(ConstructToken{});
+    pool->device_ = info.device;
+    pool->descriptorPool_ = info.descriptorPool;
+    pool->framesInFlight_ = info.framesInFlight;
+    pool->computeDescriptorSetLayout_ = info.computeDescriptorSetLayout;
+    return pool;
 }
 
 bool GrassTileResourcePool::allocateForTile(const TileCoord& coord) {
-    if (!initialized_) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-            "GrassTileResourcePool: Not initialized");
-        return false;
-    }
-
     // Check if already allocated
     if (tileDescriptorSets_.find(coord) != tileDescriptorSets_.end()) {
         return true;  // Already allocated

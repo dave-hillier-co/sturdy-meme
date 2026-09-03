@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include "ShaderLoader.h"
 #include <vector>
 #include <string>
 #include <array>
@@ -43,7 +44,7 @@ public:
     };
 
     explicit GraphicsPipelineFactory(vk::Device device);
-    ~GraphicsPipelineFactory();
+    ~GraphicsPipelineFactory() = default;
 
     // Reset all state to defaults
     GraphicsPipelineFactory& reset();
@@ -109,24 +110,23 @@ public:
     // Build the pipeline (raw handle - caller must manage lifetime)
     bool build(vk::Pipeline& pipeline);
 
-    // Cleanup any allocated shader modules (called automatically by build)
-    void cleanup();
-
 private:
     vk::Device device;
-    vk::PipelineCache pipelineCacheHandle = VK_NULL_HANDLE;
+    vk::PipelineCache pipelineCacheHandle{};
 
     // Shader state
     std::string vertShaderPath;
     std::string fragShaderPath;
     std::string tescShaderPath;  // Tessellation control shader
     std::string teseShaderPath;  // Tessellation evaluation shader
-    std::vector<vk::ShaderModule> shaderModules;
+    // Scope-owned: modules only need to outlive pipeline creation, so build()
+    // clears this once vkCreateGraphicsPipelines has returned.
+    std::vector<ShaderLoader::ScopedShaderModule> shaderModules;
 
     // Pipeline configuration
-    vk::RenderPass renderPass = VK_NULL_HANDLE;
+    vk::RenderPass renderPass{};
     uint32_t subpass = 0;
-    vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    vk::PipelineLayout pipelineLayout{};
 
     // Viewport state
     VkExtent2D extent = {0, 0};

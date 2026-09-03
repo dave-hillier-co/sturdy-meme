@@ -8,9 +8,8 @@
 #include <optional>
 #include <memory>
 
-#include "PerFrameBuffer.h"
-#include "DoubleBufferedBuffer.h"
 #include "DynamicUniformBuffer.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "ParticleSystem.h"
 #include "UBOs.h"
 #include "interfaces/IWeatherState.h"
@@ -72,7 +71,7 @@ public:
         vk::RenderPass hdrRenderPass
     );
 
-    ~WeatherSystem();
+    ~WeatherSystem() = default;
 
     // Non-copyable, non-movable
     WeatherSystem(const WeatherSystem&) = delete;
@@ -119,7 +118,6 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     bool createBuffers();
     bool createComputeDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles);
@@ -127,7 +125,6 @@ private:
     bool createGraphicsDescriptorSetLayout(SystemLifecycleHelper::PipelineHandles& handles);
     bool createGraphicsPipeline(SystemLifecycleHelper::PipelineHandles& handles);
     bool createDescriptorSets();
-    void destroyBuffers(VmaAllocator allocator);
 
     // Accessors - use stored initInfo during init, particleSystem after init completes
     vk::Device getDevice() const { return storedDevice; }
@@ -141,13 +138,14 @@ private:
     SystemLifecycleHelper::PipelineHandles& getComputePipelineHandles() { return particleSystem->getComputePipelineHandles(); }
     SystemLifecycleHelper::PipelineHandles& getGraphicsPipelineHandles() { return particleSystem->getGraphicsPipelineHandles(); }
 
-    // RAII-managed subsystem
+    // Subsystem owning the pipelines and descriptor sets (destroyed after the
+    // buffer members below, which are declared later and therefore die first).
     std::unique_ptr<ParticleSystem> particleSystem;
 
     // Stored init info (available during initialization before particleSystem is created)
-    vk::Device storedDevice = VK_NULL_HANDLE;
-    VmaAllocator storedAllocator = VK_NULL_HANDLE;
-    vk::RenderPass storedRenderPass = VK_NULL_HANDLE;
+    vk::Device storedDevice{};
+    VmaAllocator storedAllocator = nullptr;
+    vk::RenderPass storedRenderPass{};
     DescriptorManager::Pool* storedDescriptorPool = nullptr;
     VkExtent2D storedExtent = {0, 0};
     std::string storedShaderPath;
@@ -156,11 +154,12 @@ private:
     // Triple-buffered storage buffers: one per frame in flight
     // Each frame gets its own buffer set to avoid GPU read/CPU write conflicts.
     // Buffer set count MUST match frames in flight (3) to prevent race conditions.
-    BufferUtils::DoubleBufferedBufferSet particleBuffers;
-    BufferUtils::DoubleBufferedBufferSet indirectBuffers;
+    std::vector<ManagedBuffer> particleBuffers_;
+    std::vector<ManagedBuffer> indirectBuffers_;
 
-    // Uniform buffers (per frame)
-    BufferUtils::PerFrameBufferSet uniformBuffers;
+    // Uniform buffers (per frame, persistently mapped)
+    std::vector<ManagedBuffer> uniformBuffers_;
+    std::vector<void*> uniformMapped_;
 
     // Descriptor sets
     // Descriptor sets managed through ParticleSystem helper
@@ -179,8 +178,8 @@ private:
     const BufferUtils::DynamicUniformBuffer* dynamicRendererUBO_ = nullptr;
 
     // Froxel volume for fog particle lighting (Phase 4.3.9)
-    vk::ImageView froxelVolumeView = VK_NULL_HANDLE;
-    vk::Sampler froxelVolumeSampler = VK_NULL_HANDLE;
+    vk::ImageView froxelVolumeView{};
+    vk::Sampler froxelVolumeSampler{};
     float froxelFarPlane = 200.0f;
     float froxelDepthDist = 1.2f;
 

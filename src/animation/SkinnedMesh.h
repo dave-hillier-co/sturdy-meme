@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
+#include "VmaBuffer.h"
 #include <glm/glm.hpp>
 #include <vector>
 #include <array>
@@ -81,12 +82,18 @@ public:
     SkinnedMesh() = default;
     ~SkinnedMesh() = default;
 
-    void setData(const SkinnedMeshData& data);
-    bool upload(VmaAllocator allocator, vk::Device device, vk::CommandPool commandPool, vk::Queue queue);
-    void destroy(VmaAllocator allocator);
+    // Move-only: owns GPU buffers
+    SkinnedMesh(SkinnedMesh&&) noexcept = default;
+    SkinnedMesh& operator=(SkinnedMesh&&) noexcept = default;
+    SkinnedMesh(const SkinnedMesh&) = delete;
+    SkinnedMesh& operator=(const SkinnedMesh&) = delete;
 
-    vk::Buffer getVertexBuffer() const { return vertexBuffer; }
-    vk::Buffer getIndexBuffer() const { return indexBuffer; }
+    void setData(const SkinnedMeshData& data);
+    // Uploads to device-local buffers. A re-upload replaces (and frees) the previous buffers.
+    bool upload(VmaAllocator allocator, vk::Device device, vk::CommandPool commandPool, vk::Queue queue);
+
+    vk::Buffer getVertexBuffer() const { return vk::Buffer(vertexBuffer_.get()); }
+    vk::Buffer getIndexBuffer() const { return vk::Buffer(indexBuffer_.get()); }
     uint32_t getIndexCount() const { return static_cast<uint32_t>(indices.size()); }
 
     const Skeleton& getSkeleton() const { return skeleton; }
@@ -101,10 +108,9 @@ private:
     std::vector<uint32_t> indices;
     Skeleton skeleton;
 
-    vk::Buffer vertexBuffer = VK_NULL_HANDLE;
-    VmaAllocation vertexAllocation = VK_NULL_HANDLE;
-    vk::Buffer indexBuffer = VK_NULL_HANDLE;
-    VmaAllocation indexAllocation = VK_NULL_HANDLE;
+    // GPU buffers (RAII: freed by VmaBuffer's deleter)
+    VmaBuffer vertexBuffer_;
+    VmaBuffer indexBuffer_;
 };
 
 // Maximum number of bones supported in the shader

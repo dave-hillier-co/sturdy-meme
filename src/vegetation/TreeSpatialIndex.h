@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "DeferredBufferRelease.h"
+#include "core/vulkan/VmaBuffer.h"
 
 // CPU-side cell structure
 struct TreeCell {
@@ -64,7 +65,8 @@ public:
      * Returns nullptr on failure.
      */
     static std::unique_ptr<TreeSpatialIndex> create(const InitInfo& info);
-    ~TreeSpatialIndex();
+    // Member-driven teardown: the VmaBuffer vectors free the GPU buffers
+    ~TreeSpatialIndex() = default;
 
     // Non-copyable, non-movable
     TreeSpatialIndex(const TreeSpatialIndex&) = delete;
@@ -99,12 +101,12 @@ public:
 
     // Accessors for GPU buffers (frame-indexed to prevent race conditions)
     vk::Buffer getCellBuffer(uint32_t frameIndex) const {
-        return cellBuffers_[frameIndex % maxFramesInFlight_];
+        return cellBuffers_[frameIndex % maxFramesInFlight_].get();
     }
     vk::DeviceSize getCellBufferSize() const { return cellBufferSize_; }
 
     vk::Buffer getSortedTreeBuffer(uint32_t frameIndex) const {
-        return sortedTreeBuffers_[frameIndex % maxFramesInFlight_];
+        return sortedTreeBuffers_[frameIndex % maxFramesInFlight_].get();
     }
     vk::DeviceSize getSortedTreeBufferSize() const { return sortedTreeBufferSize_; }
 
@@ -124,14 +126,13 @@ public:
 
     // Check if buffers are valid
     bool isValid() const {
-        return !cellBuffers_.empty() && cellBuffers_[0] != VK_NULL_HANDLE &&
-               !sortedTreeBuffers_.empty() && sortedTreeBuffers_[0] != VK_NULL_HANDLE;
+        return !cellBuffers_.empty() && cellBuffers_[0] &&
+               !sortedTreeBuffers_.empty() && sortedTreeBuffers_[0];
     }
 
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
     // Move current GPU buffers into the deferred release queue.
     void retireGPUBuffers(DeferredBufferRelease& retiredBuffers);
 
@@ -158,11 +159,9 @@ private:
 
     // GPU buffers (triple-buffered to prevent race conditions when updating
     // while frames are in-flight - each frame uses its own copy)
-    std::vector<vk::Buffer> cellBuffers_;
-    std::vector<VmaAllocation> cellAllocations_;
+    std::vector<VmaBuffer> cellBuffers_;
     vk::DeviceSize cellBufferSize_ = 0;
 
-    std::vector<vk::Buffer> sortedTreeBuffers_;
-    std::vector<VmaAllocation> sortedTreeAllocations_;
+    std::vector<VmaBuffer> sortedTreeBuffers_;
     vk::DeviceSize sortedTreeBufferSize_ = 0;
 };

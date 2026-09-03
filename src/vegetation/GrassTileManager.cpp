@@ -4,11 +4,15 @@
 #include <algorithm>
 #include <cmath>
 
-GrassTileManager::~GrassTileManager() {
-    destroy();
+std::unique_ptr<GrassTileManager> GrassTileManager::create(const InitInfo& info) {
+    auto manager = std::make_unique<GrassTileManager>(ConstructToken{});
+    if (!manager->initInternal(info)) {
+        return nullptr;
+    }
+    return manager;
 }
 
-bool GrassTileManager::init(const InitInfo& info) {
+bool GrassTileManager::initInternal(const InitInfo& info) {
     device_ = info.device;
     allocator_ = info.allocator;
     framesInFlight_ = info.framesInFlight;
@@ -23,7 +27,8 @@ bool GrassTileManager::init(const InitInfo& info) {
     poolInfo.framesInFlight = info.framesInFlight;
     poolInfo.computeDescriptorSetLayout = info.computeDescriptorSetLayout;
 
-    if (!resourcePool_.init(poolInfo)) {
+    resourcePool_ = GrassTileResourcePool::create(poolInfo);
+    if (!resourcePool_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "GrassTileManager: Failed to initialize resource pool");
         return false;
@@ -42,14 +47,6 @@ bool GrassTileManager::init(const InitInfo& info) {
         info.maxLoadsPerFrame);
 
     return true;
-}
-
-void GrassTileManager::destroy() {
-    resourcePool_.destroy();
-    loadQueue_.clear();
-    activeTiles_.clear();
-    tileCreationTimes_.clear();
-    enabled_ = false;
 }
 
 void GrassTileManager::updateActiveTiles(const glm::vec3& cameraPos, uint64_t frameNumber,
@@ -82,7 +79,7 @@ void GrassTileManager::updateActiveTiles(const glm::vec3& cameraPos, uint64_t fr
     // Build active tiles list from loaded tiles
     activeTiles_.clear();
     for (const auto& coord : result.activeTiles) {
-        if (resourcePool_.hasTileResources(coord)) {
+        if (resourcePool_->hasTileResources(coord)) {
             ActiveTileData data;
             data.coord = coord;
             data.creationTime = tileCreationTimes_.count(coord) ?
@@ -97,7 +94,7 @@ void GrassTileManager::processLoadQueue(float currentTime) {
 
     for (const auto& coord : tilesToLoad) {
         // Allocate resources for tile
-        if (resourcePool_.allocateForTile(coord)) {
+        if (resourcePool_->allocateForTile(coord)) {
             // Mark as loaded in tracker
             tracker_.markTileLoaded(coord, 0);  // Frame number updated in next update()
 
@@ -122,7 +119,7 @@ void GrassTileManager::processUnloads(
         loadQueue_.cancel(req.coord);
 
         // Release resources
-        resourcePool_.releaseForTile(req.coord);
+        resourcePool_->releaseForTile(req.coord);
 
         // Update tracker
         tracker_.markTileUnloaded(req.coord);
@@ -144,13 +141,13 @@ void GrassTileManager::updateDescriptorSets(
     const std::vector<vk::Buffer>& grassParamsBuffers
 ) {
     // Update resource pool with shared resources
-    resourcePool_.setSharedImages(
+    resourcePool_->setSharedImages(
         terrainHeightMapView, terrainHeightMapSampler,
         displacementView, displacementSampler,
         tileArrayView, tileSampler
     );
 
-    resourcePool_.setSharedBufferArrays(
+    resourcePool_->setSharedBufferArrays(
         tileInfoBuffers,
         cullingUniformBuffers,
         grassParamsBuffers
@@ -163,7 +160,7 @@ void GrassTileManager::setSharedBuffers(vk::Buffer sharedInstanceBuffer,
                                          vk::Buffer sharedIndirectBuffer) {
     sharedInstanceBuffer_ = sharedInstanceBuffer;
     sharedIndirectBuffer_ = sharedIndirectBuffer;
-    resourcePool_.setSharedBuffers(sharedInstanceBuffer, sharedIndirectBuffer);
+    resourcePool_->setSharedBuffers(sharedInstanceBuffer, sharedIndirectBuffer);
 }
 
 void GrassTileManager::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time,
@@ -186,11 +183,11 @@ void GrassTileManager::recordCompute(vk::CommandBuffer cmd, uint32_t frameIndex,
 
     // Process each active tile
     for (const auto& tileData : activeTiles_) {
-        vk::DescriptorSet descSet = resourcePool_.getDescriptorSet(tileData.coord, computeBufferSet);
+        vk::DescriptorSet descSet = resourcePool_->getDescriptorSet(tileData.coord, computeBufferSet);
         if (!descSet) continue;
 
         // Update per-frame bindings
-        resourcePool_.writePerFrameBindings(tileData.coord, computeBufferSet);
+        resourcePool_->writePerFrameBindings(tileData.coord, computeBufferSet);
 
         // Bind descriptor set
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,

@@ -72,5 +72,8 @@ jobs:
       - name: Build
         run: cmake --build build/debug
 
+      - name: RAII ratchet
+        run: ./scripts/analyze-raii.sh --check
+
       - name: Test
         run: ctest --test-dir build/debug --output-on-failure

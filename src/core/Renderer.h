@@ -136,13 +136,13 @@ public:
     // Notify renderer that window was minimized/hidden (e.g., screen lock on macOS)
     void notifyWindowSuspended() {
         windowSuspended = true;
-        frameExecutor_.setWindowSuspended(true);
+        if (frameExecutor_) frameExecutor_->setWindowSuspended(true);
     }
 
     // Notify renderer that window was restored (e.g., screen unlock on macOS)
     void notifyWindowRestored() {
         windowSuspended = false;
-        frameExecutor_.setWindowSuspended(false);
+        if (frameExecutor_) frameExecutor_->setWindowSuspended(false);
         framebufferResized = true;  // Force swapchain recreation after restore
     }
 
@@ -247,10 +247,16 @@ private:
     std::string resourcePath;
     Config config_;  // Renderer configuration
 
+    // GPU-owning members are declared in creation order so that a plain
+    // destructor tears them down in the same order cleanup() uses (reverse):
+    // asyncInit -> screenshot -> pass scheduler -> uploader -> transfer
+    // manager -> threaded pool -> frame executor -> systems -> scene
+    // pipelines -> descriptor pool -> VulkanContext.
+
     std::unique_ptr<VulkanContext> vulkanContext_;
 
-    // All rendering subsystems - managed with automatic lifecycle
-    std::unique_ptr<RendererSystems> systems_;
+    // Descriptor pool (shared resource allocator for all subsystems)
+    std::optional<DescriptorManager::Pool> descriptorPool_;
 
     // Scene rendering pipeline (layout + graphics pipeline)
     ScenePipeline scenePipeline_;
@@ -260,8 +266,24 @@ private:
     // built in HDRPass::buildParams. Built alongside scenePipeline_.
     InstancedScenePipeline instancedScenePipeline_;
 
-    // Descriptor pool (shared resource allocator for all subsystems)
-    std::optional<DescriptorManager::Pool> descriptorPool_;
+    // All rendering subsystems - managed with automatic lifecycle
+    std::unique_ptr<RendererSystems> systems_;
+
+    // Frame execution (owns TripleBuffering, sync, acquire, submit, present)
+    std::unique_ptr<FrameExecutor> frameExecutor_;
+
+    // Multi-threading and asset infrastructure. The uploader holds a reference
+    // to the transfer manager, so it is declared (and destroyed) after it.
+    std::unique_ptr<ThreadedCommandPool> threadedCommandPool_;  // null without worker threads
+    std::unique_ptr<AsyncTransferManager> asyncTransferManager_;
+    std::unique_ptr<Loading::AsyncTextureUploader> asyncTextureUploader_;
+    PassScheduler passScheduler_;
+    AssetRegistry assetRegistry_;
+
+    // Screen grab capture (lazily created on first requestScreenshot)
+    std::unique_ptr<ScreenshotCapture> screenshotCapture_;
+    uint64_t renderedFrameCount_ = 0;
+    uint64_t autoScreenshotFrame_ = 0;  // from SCREENSHOT_AFTER_FRAMES; 0 = disabled
 
     // Resize coordinator (orchestrates resize across subsystems)
     std::unique_ptr<ResizeCoordinator> resizeCoordinator_;
@@ -272,24 +294,9 @@ private:
     // Performance toggles for debugging
     PerformanceToggles perfToggles;
 
-    // Frame execution (owns TripleBuffering, sync, acquire, submit, present)
-    FrameExecutor frameExecutor_;
-
-    // Screen grab capture (lazily created on first requestScreenshot)
-    std::unique_ptr<ScreenshotCapture> screenshotCapture_;
-    uint64_t renderedFrameCount_ = 0;
-    uint64_t autoScreenshotFrame_ = 0;  // from SCREENSHOT_AFTER_FRAMES; 0 = disabled
-
     // Pass recorders (encapsulate pass recording logic extracted from Renderer)
     std::unique_ptr<ShadowPassRecorder> shadowPassRecorder_;
     std::unique_ptr<HDRPassRecorder> hdrPassRecorder_;
-
-    // Multi-threading and asset infrastructure
-    AsyncTransferManager asyncTransferManager_;
-    ThreadedCommandPool threadedCommandPool_;
-    PassScheduler passScheduler_;
-    Loading::AsyncTextureUploader asyncTextureUploader_;
-    AssetRegistry assetRegistry_;
 
     // Convenience accessor for frame count (matches TripleBuffering::DEFAULT_FRAME_COUNT)
     static constexpr int MAX_FRAMES_IN_FLIGHT = TripleBuffering::DEFAULT_FRAME_COUNT;

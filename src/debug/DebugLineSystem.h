@@ -1,12 +1,15 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 #include "InitContext.h"
+#include "core/vulkan/VmaBuffer.h"
 
 #ifdef JPH_DEBUG_RENDERER
 #include "PhysicsDebugRenderer.h"
@@ -26,19 +29,18 @@ public:
     explicit DebugLineSystem(ConstructToken) {}
 
     // Factory: returns nullptr on failure
-    static std::unique_ptr<DebugLineSystem> create(vk::Device device, VmaAllocator allocator,
+    static std::unique_ptr<DebugLineSystem> create(const vk::raii::Device& raiiDevice, VmaAllocator allocator,
                                                     vk::RenderPass renderPass,
                                                     const std::string& shaderPath,
                                                     uint32_t framesInFlight);
     static std::unique_ptr<DebugLineSystem> create(const InitContext& ctx, vk::RenderPass renderPass);
 
+    // RAII members release every Vulkan resource in reverse declaration order
+    ~DebugLineSystem() = default;
 
-    // Destructor handles cleanup
-    ~DebugLineSystem();
-
-    // Move-only (RAII handles are non-copyable)
-    DebugLineSystem(DebugLineSystem&& other) noexcept;
-    DebugLineSystem& operator=(DebugLineSystem&& other) noexcept;
+    // Non-copyable, non-movable (held via unique_ptr)
+    DebugLineSystem(DebugLineSystem&&) = delete;
+    DebugLineSystem& operator=(DebugLineSystem&&) = delete;
     DebugLineSystem(const DebugLineSystem&) = delete;
     DebugLineSystem& operator=(const DebugLineSystem&) = delete;
 
@@ -84,28 +86,32 @@ public:
     size_t getTriangleCount() const { return triangleVertices.size() / 3; }
 
 private:
-    bool initInternal(vk::Device device, VmaAllocator allocator, vk::RenderPass renderPass,
+    bool initInternal(const vk::raii::Device& raiiDevice, VmaAllocator allocator, vk::RenderPass renderPass,
                       const std::string& shaderPath, uint32_t framesInFlight);
     bool createPipeline(vk::RenderPass renderPass, const std::string& shaderPath);
-    void destroyPipeline();
-    void cleanup();
 
-    vk::Device device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    // Persistently mapped host-visible vertex buffer; replaced wholesale when it must grow.
+    struct VertexBuffer {
+        ManagedBuffer buffer;
+        void* mapped = nullptr;
+        size_t size = 0;
+    };
+    // Creates (or grows) `vb` to hold at least `requiredSize` bytes.
+    bool ensureVertexBuffer(VertexBuffer& vb, size_t requiredSize, const char* what);
 
-    // Pipeline
-    vk::PipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    vk::Pipeline linePipeline = VK_NULL_HANDLE;
-    vk::Pipeline trianglePipeline = VK_NULL_HANDLE;
+    const vk::raii::Device* raiiDevice_ = nullptr;
+    vk::Device device{};
+    VmaAllocator allocator = nullptr;
+
+    // Pipeline (layout declared before the pipelines that reference it)
+    std::optional<vk::raii::PipelineLayout> pipelineLayout_;
+    std::optional<vk::raii::Pipeline> linePipeline_;
+    std::optional<vk::raii::Pipeline> trianglePipeline_;
 
     // Per-frame vertex buffers (double-buffered)
     struct FrameData {
-        vk::Buffer lineVertexBuffer = VK_NULL_HANDLE;
-        VmaAllocation lineVertexAllocation = VK_NULL_HANDLE;
-        vk::Buffer triangleVertexBuffer = VK_NULL_HANDLE;
-        VmaAllocation triangleVertexAllocation = VK_NULL_HANDLE;
-        size_t lineBufferSize = 0;
-        size_t triangleBufferSize = 0;
+        VertexBuffer lines;
+        VertexBuffer triangles;
     };
     std::vector<FrameData> frameData;
     uint32_t currentFrame = 0;

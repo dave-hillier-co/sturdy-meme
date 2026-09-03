@@ -17,7 +17,7 @@ DisplacementSystem::DisplacementSystem(ConstructToken) {}
 
 std::unique_ptr<DisplacementSystem> DisplacementSystem::create(const InitInfo& info) {
     auto system = std::make_unique<DisplacementSystem>(ConstructToken{});
-    if (!system->init(info)) {
+    if (!system->initInternal(info)) {
         return nullptr;
     }
     return system;
@@ -34,11 +34,7 @@ std::unique_ptr<DisplacementSystem> DisplacementSystem::create(const InitContext
     return create(info);
 }
 
-DisplacementSystem::~DisplacementSystem() {
-    cleanup();
-}
-
-bool DisplacementSystem::init(const InitInfo& info) {
+bool DisplacementSystem::initInternal(const InitInfo& info) {
     device_ = info.device;
     allocator_ = info.allocator;
     descriptorPool_ = info.descriptorPool;
@@ -70,24 +66,6 @@ bool DisplacementSystem::init(const InitInfo& info) {
     return true;
 }
 
-void DisplacementSystem::cleanup() {
-    if (!device_) return;
-
-    pipeline_.reset();
-    pipelineLayout_.reset();
-    descriptorSetLayout_.reset();
-    sampler_.reset();
-
-    imageView_.reset();
-    image_.reset();
-
-    BufferUtils::destroyBuffers(allocator_, sourceBuffers_);
-    BufferUtils::destroyBuffers(allocator_, uniformBuffers_);
-
-    device_ = nullptr;
-    raiiDevice_ = nullptr;
-}
-
 bool DisplacementSystem::createTexture() {
     // Create displacement texture (RG16F for XZ displacement vectors)
     if (!ImageBuilder(allocator_)
@@ -112,19 +90,19 @@ bool DisplacementSystem::createBuffers() {
     vk::DeviceSize uniformBufferSize = sizeof(DisplacementUniforms);
 
     BufferUtils::PerFrameBufferBuilder sourceBuilder;
-    if (!sourceBuilder.setAllocator(allocator_)
-             .setFrameCount(framesInFlight_)
-             .setSize(sourceBufferSize)
-             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-             .build(sourceBuffers_)) {
+    sourceBuilder.setAllocator(allocator_)
+        .setFrameCount(framesInFlight_)
+        .setSize(sourceBufferSize)
+        .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    if (!BufferUtils::MappedFrameBuffers::build(allocator_, sourceBuilder, sourceBuffers_)) {
         return false;
     }
 
     BufferUtils::PerFrameBufferBuilder uniformBuilder;
-    if (!uniformBuilder.setAllocator(allocator_)
-             .setFrameCount(framesInFlight_)
-             .setSize(uniformBufferSize)
-             .build(uniformBuffers_)) {
+    uniformBuilder.setAllocator(allocator_)
+        .setFrameCount(framesInFlight_)
+        .setSize(uniformBufferSize);
+    if (!BufferUtils::MappedFrameBuffers::build(allocator_, uniformBuilder, uniformBuffers_)) {
         return false;
     }
 
@@ -175,10 +153,10 @@ bool DisplacementSystem::createPipeline() {
     for (uint32_t i = 0; i < framesInFlight_; ++i) {
         DescriptorManager::SetWriter(device_, descriptorSets_[i])
             .writeStorageImage(0, getImageView())
-            .writeBuffer(1, sourceBuffers_.buffers[i], 0,
+            .writeBuffer(1, sourceBuffers_.get(i), 0,
                          sizeof(DisplacementSource) * GrassConstants::MAX_DISPLACEMENT_SOURCES,
                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(2, uniformBuffers_.buffers[i], 0, sizeof(DisplacementUniforms))
+            .writeBuffer(2, uniformBuffers_.get(i), 0, sizeof(DisplacementUniforms))
             .update();
     }
 
@@ -207,7 +185,7 @@ void DisplacementSystem::updateRegionCenter(const glm::vec3& cameraPos) {
 
 void DisplacementSystem::recordUpdate(vk::CommandBuffer cmd, uint32_t frameIndex) {
     // Copy displacement sources to per-frame buffer
-    memcpy(sourceBuffers_.mappedPointers[frameIndex], currentSources_.data(),
+    memcpy(sourceBuffers_.mapped(frameIndex), currentSources_.data(),
            sizeof(DisplacementSource) * currentSources_.size());
 
     // Update displacement uniforms
@@ -222,7 +200,7 @@ void DisplacementSystem::recordUpdate(vk::CommandBuffer cmd, uint32_t frameIndex
         1.0f / 60.0f,  // deltaTime (assume 60fps for decay calculation)
         static_cast<float>(currentSources_.size())
     );
-    memcpy(uniformBuffers_.mappedPointers[frameIndex], &uniforms, sizeof(DisplacementUniforms));
+    memcpy(uniformBuffers_.mapped(frameIndex), &uniforms, sizeof(DisplacementUniforms));
 
     // Transition displacement image to general layout. This image ACCUMULATES
     // (displacement decays over frames), so after the first frame the

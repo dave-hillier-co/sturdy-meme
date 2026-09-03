@@ -15,8 +15,8 @@
 // - Lower overhead than fence polling
 //
 // Usage:
-//   TripleBuffering frames;
-//   if (!frames.init(device)) return false;
+//   auto frames = TripleBuffering::create(device);
+//   if (!frames) return false;
 //
 //   // In render loop:
 //   frames.waitForCurrentFrameIfNeeded();
@@ -58,7 +58,6 @@ public:
     // Default to 3 frames in flight (triple buffering)
     static constexpr uint32_t DEFAULT_FRAME_COUNT = 3;
 
-    TripleBuffering() = default;
     ~TripleBuffering() = default;
 
     // Non-copyable (contains Vulkan resources)
@@ -70,17 +69,15 @@ public:
     TripleBuffering& operator=(TripleBuffering&&) noexcept = default;
 
     // =========================================================================
-    // Initialization
+    // Creation
     // =========================================================================
 
-    // Initialize synchronization primitives for the specified frame count
-    // Returns false on failure
-    bool init(const vk::raii::Device& device, uint32_t frameCount = DEFAULT_FRAME_COUNT);
+    // Create the synchronization primitives for the specified frame count.
+    // The device must outlive the returned object. Returns nullopt on failure.
+    static std::optional<TripleBuffering> create(const vk::raii::Device& device,
+                                                 uint32_t frameCount = DEFAULT_FRAME_COUNT);
 
-    // Clean up synchronization primitives
-    void destroy();
-
-    // Check if initialized
+    // Check if the sync primitives exist (false only for a moved-from object)
     bool isInitialized() const { return !frames_.empty() && device_ != nullptr; }
 
     // =========================================================================
@@ -169,7 +166,6 @@ public:
 
     // (Re)create the per-image present-wait semaphores. Call once the swapchain
     // image count is known, and again on resize if the image count changed.
-    // Requires init() to have been called first (needs a valid device).
     bool initPresentSemaphores(uint32_t imageCount);
 
     // Number of per-image present-wait semaphores currently allocated
@@ -230,6 +226,11 @@ public:
     FrameBuffered<FrameSyncPrimitives>& frames() { return frames_; }
 
 private:
+    TripleBuffering(const vk::raii::Device& device, uint32_t frameCount);
+
+    // Drop every primitive (used by the constructor's failure paths)
+    void clearSync();
+
     const vk::raii::Device* device_ = nullptr;
     FrameBuffered<FrameSyncPrimitives> frames_;
 

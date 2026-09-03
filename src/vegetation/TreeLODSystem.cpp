@@ -28,18 +28,10 @@ std::unique_ptr<TreeLODSystem> TreeLODSystem::create(const InitInfo& info) {
 }
 
 TreeLODSystem::~TreeLODSystem() {
-    if (device_ == VK_NULL_HANDLE) return;
-
-    vk::Device(device_).waitIdle();
-
-    if (billboardVertexBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, billboardVertexBuffer_, billboardVertexAllocation_);
-    }
-    if (billboardIndexBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, billboardIndexBuffer_, billboardIndexAllocation_);
-    }
-    if (instanceBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, instanceBuffer_, instanceAllocation_);
+    // Pre-existing device-idle rule kept; buffers, pipelines and the atlas are
+    // released by member destruction.
+    if (device_) {
+        vk::Device(device_).waitIdle();
     }
 }
 
@@ -60,6 +52,7 @@ bool TreeLODSystem::initInternal(const InitInfo& info) {
     resourcePath_ = info.resourcePath;
     extent_ = info.extent;
     maxFramesInFlight_ = info.maxFramesInFlight;
+    deferredRelease_.setFramesInFlight(maxFramesInFlight_);
     shadowMapSize_ = info.shadowMapSize;
 
     // Create impostor atlas
@@ -154,8 +147,7 @@ bool TreeLODSystem::createBillboardMesh() {
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&vertexBufferInfo), &allocInfo,
-                        reinterpret_cast<VkBuffer*>(&billboardVertexBuffer_), &billboardVertexAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, vertexBufferInfo, allocInfo, billboardVertexBuffer_)) {
         return false;
     }
 
@@ -165,8 +157,7 @@ bool TreeLODSystem::createBillboardMesh() {
         .setSize(indexSize)
         .setUsage(vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst);
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&indexBufferInfo), &allocInfo,
-                        reinterpret_cast<VkBuffer*>(&billboardIndexBuffer_), &billboardIndexAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, indexBufferInfo, allocInfo, billboardIndexBuffer_)) {
         return false;
     }
 
@@ -205,9 +196,9 @@ bool TreeLODSystem::createBillboardMesh() {
 
     vkCmd.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 
-    vkCmd.copyBuffer(stagingBuffer, billboardVertexBuffer_,
+    vkCmd.copyBuffer(stagingBuffer, billboardVertexBuffer_.get(),
                      vk::BufferCopy{}.setSize(vertexSize));
-    vkCmd.copyBuffer(stagingBuffer, billboardIndexBuffer_,
+    vkCmd.copyBuffer(stagingBuffer, billboardIndexBuffer_.get(),
                      vk::BufferCopy{}.setSrcOffset(vertexSize).setSize(indexSize));
 
     vkCmd.end();
@@ -492,8 +483,7 @@ bool TreeLODSystem::createInstanceBuffer(size_t maxInstances) {
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-    return vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo,
-                           reinterpret_cast<VkBuffer*>(&instanceBuffer_), &instanceAllocation_, nullptr) == VK_SUCCESS;
+    return VmaBuffer::create(allocator_, bufferInfo, allocInfo, instanceBuffer_);
 }
 
 // computeScreenError is now in CullCommon.h
@@ -638,12 +628,14 @@ void TreeLODSystem::bindImpostorPipeline(vk::CommandBuffer& cmd, uint32_t frameI
         .setExtent(vk::Extent2D{}.setWidth(extent_.width).setHeight(extent_.height));
     cmd.setScissor(0, scissor);
 
+    writeInstanceBindingIfDirty(frameIndex);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, **impostorPipelineLayout_,
                            0, vk::DescriptorSet(impostorDescriptorSets_[frameIndex]), {});
 }
 
 void TreeLODSystem::bindShadowPipeline(vk::CommandBuffer& cmd, uint32_t frameIndex) {
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, **shadowPipeline_);
+    writeInstanceBindingIfDirty(frameIndex);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, **shadowPipelineLayout_,
                            0, vk::DescriptorSet(shadowDescriptorSets_[frameIndex]), {});
 }
@@ -651,13 +643,16 @@ void TreeLODSystem::bindShadowPipeline(vk::CommandBuffer& cmd, uint32_t frameInd
 void TreeLODSystem::bindBillboardBuffers(vk::CommandBuffer& cmd, vk::Buffer instanceBuf) {
     (void)instanceBuf;  // Instance data comes from SSBO via descriptor set, not vertex buffers
     vk::DeviceSize offset = 0;
-    cmd.bindVertexBuffers(0, vk::Buffer(billboardVertexBuffer_), offset);
-    cmd.bindIndexBuffer(billboardIndexBuffer_, 0, vk::IndexType::eUint32);
+    cmd.bindVertexBuffers(0, vk::Buffer(billboardVertexBuffer_.get()), offset);
+    cmd.bindIndexBuffer(billboardIndexBuffer_.get(), 0, vk::IndexType::eUint32);
 }
 
 void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const TreeSystem& treeSystem,
                            const ScreenParams& screenParams) {
     (void)deltaTime;
+    // Once per frame: release instance buffers retired maxFramesInFlight_ frames ago.
+    deferredRelease_.tick();
+
     const auto& settings = getLODSettings();
     const auto& instances = treeSystem.getTreeInstances();
 
@@ -721,17 +716,23 @@ void TreeLODSystem::update(float deltaTime, const glm::vec3& cameraPos, const Tr
 void TreeLODSystem::updateInstanceBuffer(const std::vector<ImpostorInstanceGPU>& instances) {
     if (instances.empty()) return;
 
-    // Resize buffer if needed
+    // Resize buffer if needed. Frames in flight may still read the old buffer,
+    // so it is retired (destroyed after maxFramesInFlight_ ticks), not destroyed now.
     if (instances.size() > maxInstances_) {
-        vmaDestroyBuffer(allocator_, instanceBuffer_, instanceAllocation_);
+        deferredRelease_.retire(std::move(instanceBuffer_));
+        instanceBuffer_ = VmaBuffer{};
         createInstanceBuffer(instances.size() * 2);
+        // Descriptor sets still reference the retired buffer; each frame slot
+        // rewrites its binding right before it records (see bind*Pipeline).
+        if (!usingGPUCulledInstances_) {
+            instanceDescriptorsDirtyMask_ = ~0u;
+        }
     }
 
     // Upload instance data
-    void* data;
-    vmaMapMemory(allocator_, instanceAllocation_, &data);
+    void* data = instanceBuffer_.map();
     memcpy(data, instances.data(), instances.size() * sizeof(ImpostorInstanceGPU));
-    vmaUnmapMemory(allocator_, instanceAllocation_);
+    instanceBuffer_.unmap();
 }
 
 void TreeLODSystem::initializeDescriptorSets(const std::vector<vk::Buffer>& uniformBuffers,
@@ -752,7 +753,7 @@ void TreeLODSystem::initializeDescriptorSets(const std::vector<vk::Buffer>& unif
     auto albedoInfo = makeImageInfo(atlasSampler, albedoView);
     auto normalInfo = makeImageInfo(atlasSampler, normalView);
     auto shadowInfo = makeImageInfo(shadowSampler, shadowMap);
-    auto instanceInfo = makeBufferInfo(instanceBuffer_);
+    auto instanceInfo = makeBufferInfo(instanceBuffer_.get());
 
     // Initialize main impostor descriptor sets for all frames
     for (uint32_t frameIndex = 0; frameIndex < maxFramesInFlight_; ++frameIndex) {
@@ -783,7 +784,25 @@ void TreeLODSystem::initializeDescriptorSets(const std::vector<vk::Buffer>& unif
     SDL_Log("TreeLODSystem: Descriptor sets initialized");
 }
 
+void TreeLODSystem::writeInstanceBindingIfDirty(uint32_t frameIndex) {
+    const uint32_t bit = 1u << frameIndex;
+    if (!(instanceDescriptorsDirtyMask_ & bit) || !instanceBuffer_.get()) return;
+
+    auto instanceInfo = makeBufferInfo(instanceBuffer_.get());
+    DescriptorWriter()
+        .add(WriteBuilder::storageBuffer(BINDING_TREE_IMPOSTOR_INSTANCES, instanceInfo))
+        .update(device_, impostorDescriptorSets_[frameIndex]);
+    if (!shadowDescriptorSets_.empty()) {
+        DescriptorWriter()
+            .add(WriteBuilder::storageBuffer(BINDING_TREE_IMPOSTOR_SHADOW_INSTANCES, instanceInfo))
+            .update(device_, shadowDescriptorSets_[frameIndex]);
+    }
+    instanceDescriptorsDirtyMask_ &= ~bit;
+}
+
 void TreeLODSystem::initializeGPUCulledDescriptors(vk::Buffer gpuInstanceBuffer) {
+    usingGPUCulledInstances_ = true;
+    instanceDescriptorsDirtyMask_ = 0;
     auto instanceInfo = makeBufferInfo(gpuInstanceBuffer);
 
     // Update the instance buffer binding to use GPU-culled buffer instead of CPU buffer

@@ -1,5 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 
 #include "GpuProfiler.h"
 #include "CpuProfiler.h"
@@ -17,7 +18,7 @@
  * Results are accessible for GUI display.
  *
  * Usage:
- *   auto profiler = Profiler::create(device, physicalDevice, framesInFlight);
+ *   auto profiler = Profiler::create(raiiDevice, physicalDevice, framesInFlight);
  *   // GPU may be disabled if init fails, but CPU profiling always works
  */
 class Profiler {
@@ -31,21 +32,18 @@ public:
      * Always returns valid profiler - GPU may be disabled if init fails,
      * but CPU profiling will still work.
      */
-    static std::unique_ptr<Profiler> create(vk::Device device, vk::PhysicalDevice physicalDevice,
+    static std::unique_ptr<Profiler> create(const vk::raii::Device& raiiDevice, vk::PhysicalDevice physicalDevice,
                                              uint32_t framesInFlight) {
         auto profiler = std::make_unique<Profiler>(ConstructToken{});
-        auto gpu = GpuProfiler::create(device, physicalDevice, framesInFlight);
-        if (gpu) {
-            profiler->gpuProfiler_ = std::move(*gpu);
+        profiler->gpuProfiler_.emplace(GpuProfiler::ConstructToken{}, raiiDevice, physicalDevice, framesInFlight);
+        if (!profiler->gpuProfiler_->isInitialized()) {
+            profiler->gpuProfiler_.reset();
         }
         // CPU profiling always works, so we return valid profiler even if GPU fails
         return profiler;
     }
 
-
-    ~Profiler() {
-        gpuProfiler_.reset();
-    }
+    ~Profiler() = default;
 
     // Non-copyable, non-movable (owns GPU resources, contains atomics)
     Profiler(Profiler&& other) noexcept = delete;

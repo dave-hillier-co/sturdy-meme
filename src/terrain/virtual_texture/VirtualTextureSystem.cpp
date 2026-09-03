@@ -7,7 +7,15 @@
 
 namespace VirtualTexture {
 
-bool VirtualTextureSystem::init(const InitInfo& info) {
+std::unique_ptr<VirtualTextureSystem> VirtualTextureSystem::create(const InitInfo& info) {
+    auto system = std::make_unique<VirtualTextureSystem>(ConstructToken{});
+    if (!system->initInternal(info)) {
+        return nullptr;
+    }
+    return system;
+}
+
+bool VirtualTextureSystem::initInternal(const InitInfo& info) {
     if (!info.raiiDevice) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VirtualTextureSystem::init requires raiiDevice");
         return false;
@@ -104,17 +112,6 @@ bool VirtualTextureSystem::init(const InitInfo& info) {
 
     SDL_Log("VirtualTextureSystem initialized successfully");
     return true;
-}
-
-void VirtualTextureSystem::destroy(vk::Device device, VmaAllocator allocator) {
-    // RAII-managed subsystems are destroyed automatically via std::optional reset
-    tileLoader.reset();
-    feedback.reset();
-    pageTable.reset();
-    cache.reset();
-    paramsBuffer_.reset();
-    pendingTiles.clear();
-    pendingUploads_.clear();
 }
 
 void VirtualTextureSystem::beginFrame(vk::CommandBuffer cmd, uint32_t frameIndex) {

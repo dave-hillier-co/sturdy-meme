@@ -20,7 +20,17 @@ std::unique_ptr<NPCSimulation> NPCSimulation::create(const InitInfo& info) {
 }
 
 NPCSimulation::~NPCSimulation() {
-    cleanup();
+    // Destroy ECS entities if ECS is enabled. Archetype render data (SkinnedMesh
+    // GPU buffers), the archetype manager and the characters are released by
+    // member destruction in reverse declaration order.
+    if (ecsWorld_) {
+        for (ecs::Entity entity : npcEntities_) {
+            if (ecsWorld_->valid(entity)) {
+                ecsWorld_->destroy(entity);
+            }
+        }
+        npcEntities_.clear();
+    }
 }
 
 bool NPCSimulation::initInternal(const InitInfo& info) {
@@ -34,29 +44,6 @@ bool NPCSimulation::initInternal(const InitInfo& info) {
     ecsWorld_ = info.ecsWorld;
 
     return true;
-}
-
-void NPCSimulation::cleanup() {
-    // Destroy ECS entities if ECS is enabled
-    if (ecsWorld_) {
-        for (ecs::Entity entity : npcEntities_) {
-            if (ecsWorld_->valid(entity)) {
-                ecsWorld_->destroy(entity);
-            }
-        }
-        npcEntities_.clear();
-    }
-
-    // Clean up archetype render data (GPU resources)
-    for (auto& [id, data] : archetypeRenderData_) {
-        if (data.skinnedMesh) {
-            data.skinnedMesh->destroy(allocator_);
-        }
-    }
-    archetypeRenderData_.clear();
-    archetypeManager_.clear();
-
-    characters_.clear();
 }
 
 size_t NPCSimulation::spawnNPCs(const std::vector<NPCSpawnInfo>& spawnPoints) {

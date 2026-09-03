@@ -16,6 +16,7 @@
 #include "MaterialDescriptorFactory.h"
 #include "GlobalBufferManager.h"
 #include "DynamicUniformBuffer.h"
+#include "VmaBuffer.h"
 
 class AnimatedCharacter;
 
@@ -142,40 +143,44 @@ public:
     void setExtent(VkExtent2D newExtent) { extent = newExtent; }
 
     // Accessors for ShadowSystem integration
-    vk::DescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_ ? **descriptorSetLayout_ : VK_NULL_HANDLE; }
-    vk::PipelineLayout getPipelineLayout() const { return pipelineLayout_ ? **pipelineLayout_ : VK_NULL_HANDLE; }
-    vk::Pipeline getPipeline() const { return pipeline_ ? **pipeline_ : VK_NULL_HANDLE; }
+    vk::DescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_ ? **descriptorSetLayout_ : vk::DescriptorSetLayout{}; }
+    vk::PipelineLayout getPipelineLayout() const { return pipelineLayout_ ? **pipelineLayout_ : vk::PipelineLayout{}; }
+    vk::Pipeline getPipeline() const { return pipeline_ ? **pipeline_ : vk::Pipeline{}; }
     vk::DescriptorSet getDescriptorSet(uint32_t frameIndex) const { return descriptorSets[frameIndex]; }
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
     bool createDescriptorSetLayout();
     bool createPipeline();
     bool createBoneMatricesBuffers();
 
     // Vulkan handles (stored, not owned)
-    vk::Device device = VK_NULL_HANDLE;
-    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    vk::Device device{};
+    vk::PhysicalDevice physicalDevice{};
+    VmaAllocator allocator = nullptr;
     DescriptorManager::Pool* descriptorPool = nullptr;
-    vk::RenderPass renderPass = VK_NULL_HANDLE;
+    vk::RenderPass renderPass{};
     VkExtent2D extent{};
     std::string shaderPath;
     uint32_t framesInFlight = 0;
     AddCommonBindingsCallback addCommonBindings;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
-    // Created resources (RAII-managed)
+    // Created resources (RAII-managed), declared in dependency order so that
+    // reverse destruction runs: bone buffer, pipeline, pipeline layout, set layout.
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> pipeline_;
 
+    // Pool-owned: released with the DescriptorManager::Pool
     std::vector<vk::DescriptorSet> descriptorSets;
 
     // Multi-slot dynamic buffer for bone matrices
-    // Supports MAX_SKINNED_CHARACTERS slots per frame, selected via dynamic offset
+    // Supports MAX_SKINNED_CHARACTERS slots per frame, selected via dynamic offset.
+    // The plain struct keeps offsets/mapped pointer; boneMatricesStorage_ owns the
+    // buffer + allocation (persistently mapped, VMA unmaps on destroy).
     BufferUtils::MultiSlotDynamicBuffer boneMatricesBuffer_;
+    VmaBuffer boneMatricesStorage_;
 
     // Reused across updateBoneMatrices() calls to avoid a per-call heap allocation.
     // Safe because updateBoneMatrices is only called sequentially on the main thread.

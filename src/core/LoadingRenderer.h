@@ -21,7 +21,8 @@ class VulkanContext;
  * - Borrows VulkanContext (does not take ownership)
  * - Creates its own render pass, framebuffers, pipeline, command buffers
  * - Renders a rotating quad with animated colors
- * - Resources are cleaned up before full Renderer takes over
+ * - Resources are released by the destructor (after a device-idle wait),
+ *   which must run before the full Renderer takes over the context
  *
  * Usage:
  *   auto loading = LoadingRenderer::create(vulkanContext, shaderPath);
@@ -29,7 +30,7 @@ class VulkanContext;
  *       loading->render();
  *       SDL_PumpEvents();
  *   }
- *   loading->cleanup();  // Must call before creating full Renderer
+ *   loading.reset();  // Must happen before creating full Renderer
  */
 class LoadingRenderer {
 public:
@@ -64,17 +65,11 @@ public:
     bool render();
 
     /**
-     * Cleanup all resources. MUST be called before VulkanContext is used
-     * by the full Renderer to avoid resource conflicts.
-     */
-    void cleanup();
-
-    /**
      * The borrowed VulkanContext has already been destroyed (the full Renderer
      * took ownership of it and failed to initialize). Its device took every
      * object this renderer created down with it, so forget them without
-     * touching the device. Afterwards the renderer is inert and cleanup() is
-     * a no-op.
+     * touching the device. Afterwards the renderer is inert and its
+     * destructor touches nothing.
      */
     void abandon();
 
@@ -118,5 +113,4 @@ private:
     // State
     float startTime_ = 0.0f;
     float progress_ = 0.0f;
-    bool initialized_ = false;
 };

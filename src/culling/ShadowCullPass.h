@@ -9,7 +9,7 @@
 #include <optional>
 #include <string>
 
-#include "core/PerFrameBuffer.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "material/DescriptorManager.h"
 #include "core/InitContext.h"
 #include "culling/GPUCullPass.h"  // for GPUCullUniforms
@@ -50,7 +50,7 @@ public:
 
     static std::unique_ptr<ShadowCullPass> create(const InitInfo& info);
 
-    ~ShadowCullPass();
+    ~ShadowCullPass() = default;
 
     ShadowCullPass(const ShadowCullPass&) = delete;
     ShadowCullPass& operator=(const ShadowCullPass&) = delete;
@@ -81,15 +81,14 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
     bool createPipeline();
     bool createBuffers();
     bool createDescriptorSets();
 
     uint32_t flatIndex(uint32_t cascade, uint32_t frame) const { return cascade * framesInFlight_ + frame; }
 
-    vk::Device device_ = VK_NULL_HANDLE;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
+    vk::Device device_{};
+    VmaAllocator allocator_ = nullptr;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string shaderPath_;
     uint32_t framesInFlight_ = 0;
@@ -103,16 +102,19 @@ private:
     // Flattened [cascade * framesInFlight + frame] descriptor sets.
     std::vector<vk::DescriptorSet> descSets_;
 
-    // Per-cascade per-frame buffers (each set holds framesInFlight buffers).
-    std::vector<BufferUtils::PerFrameBufferSet> uniformBuffers_;   // [cascade]
-    std::vector<BufferUtils::PerFrameBufferSet> indirectBuffers_;  // [cascade]
-    std::vector<BufferUtils::PerFrameBufferSet> countBuffers_;     // [cascade]
+    // Per-cascade per-frame buffers, indexed [cascade][frame] (RAII).
+    std::vector<std::vector<ManagedBuffer>> uniformBuffers_;
+    std::vector<std::vector<ManagedBuffer>> indirectBuffers_;
+    std::vector<std::vector<ManagedBuffer>> countBuffers_;
+    // Persistently mapped pointers for the host-visible sets, indexed [cascade][frame].
+    std::vector<std::vector<void*>> uniformMapped_;
+    std::vector<std::vector<void*>> countMapped_;
 
     GPUSceneBuffer* currentSceneBuffer_ = nullptr;
     uint32_t lastObjectCount_ = 0;
 
-    vk::ImageView placeholderImageView_ = VK_NULL_HANDLE;
-    vk::Sampler placeholderSampler_ = VK_NULL_HANDLE;
+    vk::ImageView placeholderImageView_{};
+    vk::Sampler placeholderSampler_{};
 
     static constexpr uint32_t WORKGROUP_SIZE = 64;
     static constexpr uint32_t MAX_OBJECTS = 8192;

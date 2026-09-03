@@ -13,7 +13,7 @@
 #include "TreeSpatialIndex.h"
 #include "CullCommon.h"
 #include "DescriptorManager.h"
-#include "PerFrameBuffer.h"
+#include "MappedFrameBuffers.h"
 #include "FrameIndexedBuffers.h"
 #include "DeferredBufferRelease.h"
 
@@ -158,7 +158,10 @@ public:
     };
 
     static std::unique_ptr<TreeLeafCulling> create(const InitInfo& info);
-    ~TreeLeafCulling();
+    // Member-driven teardown: FrameIndexedBuffers / MappedFrameBuffers / raii
+    // pipelines release themselves; deferredRelease_ (declared first) frees its
+    // pending owners last.
+    ~TreeLeafCulling() = default;
 
     // Non-copyable, non-movable
     TreeLeafCulling(const TreeLeafCulling&) = delete;
@@ -207,7 +210,7 @@ public:
 
 
 private:
-    bool init(const InitInfo& info);
+    bool initInternal(const InitInfo& info);
 
     bool createLeafCullPipeline();
     bool createLeafCullBuffers(uint32_t maxLeafInstances, uint32_t numTrees);
@@ -236,7 +239,7 @@ private:
     bool growTreeBuffers(uint32_t numTrees);
 
     // Hand a per-frame uniform buffer set to deferredRelease_ before rebuilding it.
-    void retirePerFrameBuffers(BufferUtils::PerFrameBufferSet& buffers);
+    void retirePerFrameBuffers(BufferUtils::MappedFrameBuffers& buffers);
 
     const vk::raii::Device* raiiDevice_ = nullptr;
     vk::Device device_ = VK_NULL_HANDLE;
@@ -271,8 +274,8 @@ private:
     BufferUtils::FrameIndexedBuffers cullIndirectBuffers_;
     vk::DeviceSize cullOutputBufferSize_ = 0;
 
-    BufferUtils::PerFrameBufferSet cullUniformBuffers_;  // CullingUniforms at binding 3
-    BufferUtils::PerFrameBufferSet leafCullParamsBuffers_;  // LeafCullParams at binding 8
+    BufferUtils::MappedFrameBuffers cullUniformBuffers_;  // CullingUniforms at binding 3
+    BufferUtils::MappedFrameBuffers leafCullParamsBuffers_;  // LeafCullParams at binding 8
 
     // Triple-buffered tree data buffers to prevent race conditions.
     // These are updated every frame via vkCmdUpdateBuffer, so they must be
@@ -304,8 +307,8 @@ private:
 
     BufferUtils::FrameIndexedBuffers cellCullIndirectBuffers_;
 
-    BufferUtils::PerFrameBufferSet cellCullUniformBuffers_;  // CullingUniforms at binding 3
-    BufferUtils::PerFrameBufferSet cellCullParamsBuffers_;  // CellCullParams at binding 4
+    BufferUtils::MappedFrameBuffers cellCullUniformBuffers_;  // CullingUniforms at binding 3
+    BufferUtils::MappedFrameBuffers cellCullParamsBuffers_;  // CellCullParams at binding 4
 
     // =========================================================================
     // Tree Filtering (Two-Phase Culling)
@@ -316,8 +319,8 @@ private:
     std::vector<vk::DescriptorSet> treeFilterDescriptorSets_;
     uint32_t treeFilterDescriptorsDirtyMask_ = 0;
 
-    BufferUtils::PerFrameBufferSet treeFilterUniformBuffers_;  // CullingUniforms at binding 6
-    BufferUtils::PerFrameBufferSet treeFilterParamsBuffers_;  // TreeFilterParams at binding 7
+    BufferUtils::MappedFrameBuffers treeFilterUniformBuffers_;  // CullingUniforms at binding 6
+    BufferUtils::MappedFrameBuffers treeFilterParamsBuffers_;  // TreeFilterParams at binding 7
 
     std::optional<vk::raii::Pipeline> twoPhaseLeafCullPipeline_;
     std::optional<vk::raii::PipelineLayout> twoPhaseLeafCullPipelineLayout_;
@@ -334,7 +337,7 @@ private:
     uint32_t twoPhaseLeafCullDescriptorsDirtyMask_ = ~0u;
     vk::Buffer lastLeafInstanceBuffer_ = VK_NULL_HANDLE;
 
-    BufferUtils::PerFrameBufferSet leafCullP3ParamsBuffers_;  // LeafCullP3Params at binding 6
+    BufferUtils::MappedFrameBuffers leafCullP3ParamsBuffers_;  // LeafCullP3Params at binding 6
 
     // Triple-buffered intermediate buffers for two-phase culling
     BufferUtils::FrameIndexedBuffers visibleTreeBuffers_;

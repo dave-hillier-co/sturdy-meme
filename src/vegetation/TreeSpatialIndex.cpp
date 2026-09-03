@@ -13,10 +13,6 @@ std::unique_ptr<TreeSpatialIndex> TreeSpatialIndex::create(const InitInfo& info)
     return index;
 }
 
-TreeSpatialIndex::~TreeSpatialIndex() {
-    cleanup();
-}
-
 bool TreeSpatialIndex::initInternal(const InitInfo& info) {
     device_ = info.device;
     allocator_ = info.allocator;
@@ -53,24 +49,6 @@ bool TreeSpatialIndex::initInternal(const InitInfo& info) {
     SDL_Log("TreeSpatialIndex: Initialized %dx%d grid (%.1fm cells, %.1fm world)",
             gridDimension_, gridDimension_, cellSize_, worldSize_);
     return true;
-}
-
-void TreeSpatialIndex::cleanup() {
-    for (size_t i = 0; i < cellBuffers_.size(); ++i) {
-        if (cellBuffers_[i] != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator_, cellBuffers_[i], cellAllocations_[i]);
-        }
-    }
-    cellBuffers_.clear();
-    cellAllocations_.clear();
-
-    for (size_t i = 0; i < sortedTreeBuffers_.size(); ++i) {
-        if (sortedTreeBuffers_[i] != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator_, sortedTreeBuffers_[i], sortedTreeAllocations_[i]);
-        }
-    }
-    sortedTreeBuffers_.clear();
-    sortedTreeAllocations_.clear();
 }
 
 void TreeSpatialIndex::worldToCell(const glm::vec3& worldPos, int32_t& cellX, int32_t& cellZ) const {
@@ -190,17 +168,17 @@ void TreeSpatialIndex::rebuild(const std::vector<glm::mat4>& transforms,
 }
 
 void TreeSpatialIndex::retireGPUBuffers(DeferredBufferRelease& retiredBuffers) {
-    for (size_t i = 0; i < cellBuffers_.size(); ++i) {
-        retiredBuffers.retire(allocator_, cellBuffers_[i], cellAllocations_[i]);
+    // A std::vector<VmaBuffer> is a movable owner: the release queue destroys it
+    // once every frame that could reference these buffers has completed.
+    if (!cellBuffers_.empty()) {
+        retiredBuffers.retire(std::move(cellBuffers_));
     }
     cellBuffers_.clear();
-    cellAllocations_.clear();
 
-    for (size_t i = 0; i < sortedTreeBuffers_.size(); ++i) {
-        retiredBuffers.retire(allocator_, sortedTreeBuffers_[i], sortedTreeAllocations_[i]);
+    if (!sortedTreeBuffers_.empty()) {
+        retiredBuffers.retire(std::move(sortedTreeBuffers_));
     }
     sortedTreeBuffers_.clear();
-    sortedTreeAllocations_.clear();
 }
 
 bool TreeSpatialIndex::uploadToGPU(DeferredBufferRelease& retiredBuffers) {
@@ -250,36 +228,35 @@ bool TreeSpatialIndex::uploadToGPU(DeferredBufferRelease& retiredBuffers) {
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-    // Create triple-buffered cell and sorted tree buffers
-    cellBuffers_.resize(maxFramesInFlight_, VK_NULL_HANDLE);
-    cellAllocations_.resize(maxFramesInFlight_, VK_NULL_HANDLE);
-    sortedTreeBuffers_.resize(maxFramesInFlight_, VK_NULL_HANDLE);
-    sortedTreeAllocations_.resize(maxFramesInFlight_, VK_NULL_HANDLE);
+    // Create triple-buffered cell and sorted tree buffers. The buffers created
+    // so far were never submitted, so on failure they are destroyed immediately
+    // by clearing the vectors.
+    cellBuffers_.resize(maxFramesInFlight_);
+    sortedTreeBuffers_.resize(maxFramesInFlight_);
 
     for (uint32_t i = 0; i < maxFramesInFlight_; ++i) {
-        if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&cellBufferInfo), &allocInfo,
-                            reinterpret_cast<VkBuffer*>(&cellBuffers_[i]), &cellAllocations_[i], nullptr) != VK_SUCCESS) {
+        if (!VmaBuffer::create(allocator_, cellBufferInfo, allocInfo, cellBuffers_[i])) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSpatialIndex: Failed to create cell buffer %u", i);
-            cleanup();
+            cellBuffers_.clear();
+            sortedTreeBuffers_.clear();
             return false;
         }
 
-        if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&sortedBufferInfo), &allocInfo,
-                            reinterpret_cast<VkBuffer*>(&sortedTreeBuffers_[i]), &sortedTreeAllocations_[i], nullptr) != VK_SUCCESS) {
+        if (!VmaBuffer::create(allocator_, sortedBufferInfo, allocInfo, sortedTreeBuffers_[i])) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeSpatialIndex: Failed to create sorted tree buffer %u", i);
-            cleanup();
+            cellBuffers_.clear();
+            sortedTreeBuffers_.clear();
             return false;
         }
 
         // Upload data to each buffer
-        void* mappedData;
-        vmaMapMemory(allocator_, cellAllocations_[i], &mappedData);
+        void* mappedData = cellBuffers_[i].map();
         memcpy(mappedData, cellsGPU_.data(), cellBufferSize_);
-        vmaUnmapMemory(allocator_, cellAllocations_[i]);
+        cellBuffers_[i].unmap();
 
-        vmaMapMemory(allocator_, sortedTreeAllocations_[i], &mappedData);
+        mappedData = sortedTreeBuffers_[i].map();
         memcpy(mappedData, sortedTrees_.data(), sortedTreeBufferSize_);
-        vmaUnmapMemory(allocator_, sortedTreeAllocations_[i]);
+        sortedTreeBuffers_[i].unmap();
     }
 
     SDL_Log("TreeSpatialIndex: Uploaded %zu cells (%.2f KB) and %zu sorted trees (%.2f KB) x%u frames",

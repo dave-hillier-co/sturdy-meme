@@ -124,7 +124,7 @@ void Renderer::updatePhysicsDebug(PhysicsWorld& physics, const glm::vec3& camera
 
     // Begin debug line frame (clear previous and set frame index)
     // This is called here so physics debug lines can be collected before render()
-    systems_->debugLine().beginFrame(frameExecutor_.currentFrameIndex());
+    systems_->debugLine().beginFrame(frameExecutor_ ? frameExecutor_->currentFrameIndex() : 0);
 
     // Create debug renderer on first use (after Jolt is initialized)
     if (!systems_->physicsDebugRenderer()) {
@@ -168,9 +168,8 @@ void Renderer::cleanup() {
     cancelAsyncInit();
 
     vk::Device device = vulkanContext_->getVkDevice();
-    VmaAllocator allocator = vulkanContext_->getAllocator();
 
-    if (device != VK_NULL_HANDLE) {
+    if (device) {
         vulkanContext_->waitIdle();  // device-wide wait under GraphicsQueueLock
 
         // Drops the loader (task lambdas and anything they still own) and the
@@ -188,35 +187,28 @@ void Renderer::cleanup() {
         passScheduler_.clear();
 
         // Shutdown multi-threading infrastructure in reverse init order
-        asyncTextureUploader_.shutdown();
-        asyncTransferManager_.shutdown();
-        threadedCommandPool_.shutdown();
+        asyncTextureUploader_.reset();
+        asyncTransferManager_.reset();
+        threadedCommandPool_.reset();
 
         // Destroy FrameExecutor (owns TripleBuffering) before its dependencies
-        frameExecutor_.destroy();
+        frameExecutor_.reset();
 
         // Destroy all subsystems via RendererSystems
-        if (systems_) {
-            systems_->destroy(device, allocator);
-            systems_.reset();
-        }
+        systems_.reset();
 
         // Clean up ScenePipeline (RAII objects must be reset while device is alive)
         scenePipeline_.reset();
         instancedScenePipeline_.reset();
 
-        // Clean up descriptor pool
-        if (descriptorPool_.has_value()) {
-            descriptorPool_->destroy();
-            descriptorPool_.reset();
-        }
+        // Clean up descriptor pool (its destructor releases the vk pools)
+        descriptorPool_.reset();
 
         // Note: command pool, render pass, depth resources, and framebuffers
-        // are now owned by VulkanContext and cleaned up in its shutdown()
+        // are owned by VulkanContext and released by its destructor
     }
 
-    SDL_Log("calling vulkanContext_->shutdown");
-    vulkanContext_->shutdown();
+    vulkanContext_.reset();
     SDL_Log("vulkanContext shutdown complete");
 }
 
@@ -234,7 +226,7 @@ bool Renderer::render(const Camera& camera) {
         requestScreenshot();
     }
 
-    FrameResult result = frameExecutor_.execute(
+    FrameResult result = frameExecutor_->execute(
         [&](uint32_t imageIndex, uint32_t frameIndex) {
             return buildFrame(camera, imageIndex, frameIndex);
         });
@@ -271,7 +263,7 @@ vk::CommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex
     cfg.maxSnowHeight = MAX_SNOW_HEIGHT;
     cfg.lightCullRadius = lightCullRadius;
     cfg.ecsWorld = ecsWorld_;
-    FrameUpdate::Result upd = FrameUpdate::run(*systems_, asyncTransferManager_, camera, frameIndex,
+    FrameUpdate::Result upd = FrameUpdate::run(*systems_, asyncTransferManager_.get(), camera, frameIndex,
                                                vulkanContext_->getVkSwapchainExtent(), cfg);
     lastSunIntensity = upd.sunIntensity;
     FrameData& frame = upd.frame;
@@ -282,7 +274,7 @@ vk::CommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex
     // GPU is done with this slot's secondary buffers and it's safe to reset the
     // pools — this returns the per-frame allocation counters to zero so the
     // pre-allocated buffers are reused instead of leaking new ones each frame.
-    threadedCommandPool_.resetFrame(frame.frameIndex);
+    if (threadedCommandPool_) threadedCommandPool_->resetFrame(frame.frameIndex);
 
     // Command buffer recording
     vk::CommandBuffer cmd = vulkanContext_->getCommandBuffer(frame.frameIndex);
@@ -303,7 +295,7 @@ vk::CommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex
     psCtx.imageIndex = imageIndex;
     psCtx.deltaTime = frame.deltaTime;
     psCtx.withUserData(&renderCtx)
-        .withThreading(&threadedCommandPool_,
+        .withThreading(threadedCommandPool_.get(),
                        vk::RenderPass(systems_->postProcess().getHDRRenderPass()),
                        vk::Framebuffer(systems_->postProcess().getHDRFramebuffer()));
 
@@ -339,7 +331,7 @@ void Renderer::waitIdle() {
 }
 
 void Renderer::waitForPreviousFrame() {
-    frameExecutor_.waitForPreviousFrame();
+    if (frameExecutor_) frameExecutor_->waitForPreviousFrame();
 }
 
 bool Renderer::handleResize() {

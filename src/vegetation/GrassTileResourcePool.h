@@ -8,6 +8,7 @@
 #include <vk_mem_alloc.h>
 #include <unordered_map>
 #include <array>
+#include <memory>
 #include <vector>
 
 /**
@@ -32,22 +33,22 @@ public:
         vk::DescriptorSetLayout computeDescriptorSetLayout;
     };
 
-    GrassTileResourcePool() = default;
-    ~GrassTileResourcePool();
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    explicit GrassTileResourcePool(ConstructToken) {}
+
+    /**
+     * Factory: validate parameters and create the pool.
+     * Returns nullptr on failure.
+     */
+    static std::unique_ptr<GrassTileResourcePool> create(const InitInfo& info);
+
+    // Descriptor sets are owned by the DescriptorManager::Pool; the map cleans itself.
+    ~GrassTileResourcePool() = default;
 
     // Non-copyable, non-movable
     GrassTileResourcePool(const GrassTileResourcePool&) = delete;
     GrassTileResourcePool& operator=(const GrassTileResourcePool&) = delete;
-
-    /**
-     * Initialize the resource pool
-     */
-    bool init(const InitInfo& info);
-
-    /**
-     * Cleanup all resources
-     */
-    void destroy();
 
     /**
      * Allocate resources for a tile
@@ -111,7 +112,6 @@ public:
     size_t getAllocatedTileCount() const { return tileDescriptorSets_.size(); }
 
 private:
-    bool initialized_ = false;
     vk::Device device_;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     uint32_t framesInFlight_ = 3;

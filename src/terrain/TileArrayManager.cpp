@@ -8,11 +8,15 @@
 #include <cstring>
 #include <cmath>
 
-TileArrayManager::~TileArrayManager() {
-    cleanup();
+std::unique_ptr<TileArrayManager> TileArrayManager::create(const InitInfo& info) {
+    auto manager = std::make_unique<TileArrayManager>(ConstructToken{});
+    if (!manager->initInternal(info)) {
+        return nullptr;
+    }
+    return manager;
 }
 
-bool TileArrayManager::init(const InitInfo& info) {
+bool TileArrayManager::initInternal(const InitInfo& info) {
     if (!info.raiiDevice) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TileArrayManager: raiiDevice is null");
         return false;
@@ -69,11 +73,6 @@ bool TileArrayManager::init(const InitInfo& info) {
             storedTileResolution_, storedTileResolution_, maxLayers_);
 
     return true;
-}
-
-void TileArrayManager::cleanup() {
-    arrayView_.reset();
-    arrayImage_.reset();
 }
 
 int32_t TileArrayManager::allocateLayer() {

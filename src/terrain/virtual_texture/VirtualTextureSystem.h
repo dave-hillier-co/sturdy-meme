@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <memory>
 #include <unordered_set>
 #include <optional>
 
@@ -36,34 +37,35 @@ namespace VirtualTexture {
  */
 class VirtualTextureSystem {
 public:
-    VirtualTextureSystem() = default;
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    explicit VirtualTextureSystem(ConstructToken) {}
+
     ~VirtualTextureSystem() = default;
 
-    // Non-copyable
+    // Non-copyable, non-movable
     VirtualTextureSystem(const VirtualTextureSystem&) = delete;
     VirtualTextureSystem& operator=(const VirtualTextureSystem&) = delete;
+    VirtualTextureSystem(VirtualTextureSystem&&) = delete;
+    VirtualTextureSystem& operator=(VirtualTextureSystem&&) = delete;
 
     struct InitInfo {
         const vk::raii::Device* raiiDevice = nullptr;
-        vk::Device device = VK_NULL_HANDLE;
-        VmaAllocator allocator = VK_NULL_HANDLE;
-        vk::CommandPool commandPool = VK_NULL_HANDLE;
-        vk::Queue queue = VK_NULL_HANDLE;
+        vk::Device device;
+        VmaAllocator allocator = nullptr;
+        vk::CommandPool commandPool;
+        vk::Queue queue;
         std::string tilePath;
         VirtualTextureConfig config;
         uint32_t framesInFlight = 3;
     };
 
     /**
-     * Initialize the virtual texture system
-     * @return true on success
+     * Factory: create and initialize the virtual texture system.
+     * Returns nullptr on failure. All resources are released by the destructor
+     * (the tile loader joins its workers before the GPU subsystems are torn down).
      */
-    bool init(const InitInfo& info);
-
-    /**
-     * Destroy all resources
-     */
-    void destroy(vk::Device device, VmaAllocator allocator);
+    static std::unique_ptr<VirtualTextureSystem> create(const InitInfo& info);
 
     /**
      * Begin a new frame - clears feedback buffer
@@ -157,9 +159,12 @@ public:
     bool isTileResident(TileId id) const { return cache->hasTile(id); }
 
 private:
+    bool initInternal(const InitInfo& info);
+
     VirtualTextureConfig config;
 
-    // RAII-managed subsystems
+    // RAII-managed subsystems. Destroyed in reverse declaration order:
+    // tileLoader (joins worker threads) first, then feedback, pageTable, cache.
     std::unique_ptr<VirtualTextureCache> cache;
     std::unique_ptr<VirtualTexturePageTable> pageTable;
     std::unique_ptr<VirtualTextureFeedback> feedback;

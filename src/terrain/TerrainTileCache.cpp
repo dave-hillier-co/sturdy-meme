@@ -22,7 +22,13 @@ std::unique_ptr<TerrainTileCache> TerrainTileCache::create(const InitInfo& info)
 }
 
 TerrainTileCache::~TerrainTileCache() {
-    cleanup();
+    // Uploads recorded by promoteCpuTilesToResident() may still reference the tile
+    // array; members cannot express that dependency, so drain the GPU first.
+    // Everything else (worker join, GPU sub-components, sampler) is released by
+    // member destruction in reverse declaration order.
+    if (device) {
+        device.waitIdle();
+    }
 }
 
 bool TerrainTileCache::initInternal(const InitInfo& info) {
@@ -64,7 +70,8 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         arrayInfo.commandPool = commandPool;
         arrayInfo.storedTileResolution = storedTileResolution;
         arrayInfo.maxLayers = MAX_ACTIVE_TILES;
-        if (!tileArray_.init(arrayInfo)) {
+        tileArray_ = TileArrayManager::create(arrayInfo);
+        if (!tileArray_) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to init TileArrayManager");
             return false;
         }
@@ -75,11 +82,11 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         TileInfoBuffer::InitInfo bufInfo{};
         bufInfo.allocator = allocator;
         bufInfo.maxActiveTiles = MAX_ACTIVE_TILES;
-        if (!tileInfoBuffer_.init(bufInfo)) {
+        tileInfoBuffer_ = TileInfoBuffer::create(bufInfo);
+        if (!tileInfoBuffer_) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TerrainTileCache: Failed to init TileInfoBuffer");
             return false;
         }
-        tileInfoBuffer_.initializeAllFrames();
     }
 
     // Create background disk loader for streamed tiles (worker threads do the
@@ -114,7 +121,8 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
         holeInfo.commandPool = commandPool;
         holeInfo.storedTileResolution = storedTileResolution;
         holeInfo.maxLayers = MAX_ACTIVE_TILES;
-        if (!holeMask_.init(holeInfo)) {
+        holeMask_ = HoleMaskManager::create(holeInfo);
+        if (!holeMask_) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                          "TerrainTileCache: Failed to init HoleMaskManager");
             return false;
@@ -122,31 +130,6 @@ bool TerrainTileCache::initInternal(const InitInfo& info) {
     }
 
     return true;
-}
-
-void TerrainTileCache::cleanup() {
-    // Join worker threads first so no background load is in flight while we tear
-    // down. Workers only touch their own LoadedTile state, never loadedTiles or
-    // GPU resources, but joining here makes the lifetime explicit and safe.
-    diskLoader_.reset();
-
-    // Wait for GPU to finish
-    if (device) {
-        vk::Device(device).waitIdle();
-    }
-
-    // Clean up sub-components
-    baseHeightMap_.cleanup();
-    holeMask_.cleanup();
-    tileInfoBuffer_.cleanup();
-    tileArray_.cleanup();
-
-    // Unload all tiles (GPU residency is owned by the shared tile array, freed above)
-    loadedTiles.clear();
-    activeTiles.clear();
-
-    // Destroy sampler (RAII via reset)
-    sampler_.reset();
 }
 
 bool TerrainTileCache::loadMetadata() {
@@ -319,18 +302,18 @@ void TerrainTileCache::promoteCpuTilesToResident(uint32_t& tilesAddedThisFrame, 
         if (tile.state != TileState::CpuResident) continue;
         if (tile.cpuData.empty()) continue;
         // Base LOD tiles never get GPU layers here; they feed the base heightmap.
-        if (tile.lod == baseHeightMap_.getBaseLOD()) continue;
+        if (tile.lod == baseHeightMap_->getBaseLOD()) continue;
 
-        int32_t layerIndex = tileArray_.allocateLayer();
+        int32_t layerIndex = tileArray_->allocateLayer();
         if (layerIndex < 0) {
             // Array full: stays CpuResident (height queries still work). Retried later.
             continue;
         }
 
         tile.arrayLayerIndex = layerIndex;
-        tileArray_.copyTileToLayer(tile, static_cast<uint32_t>(layerIndex));
+        tileArray_->copyTileToLayer(tile, static_cast<uint32_t>(layerIndex));
         tile.state = TileState::Resident;
-        holeMask_.uploadTileHoleMask(tile, tile.arrayLayerIndex);
+        holeMask_->uploadTileHoleMask(tile, tile.arrayLayerIndex);
         tilesAddedThisFrame++;
     }
 }
@@ -350,7 +333,7 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
     float camX = cameraPos.x;
     float camZ = cameraPos.z;
 
-    uint32_t baseLOD = baseHeightMap_.getBaseLOD();
+    uint32_t baseLOD = baseHeightMap_->getBaseLOD();
 
     // Outer radius of each LOD's distance band. LOD n covers the concentric ring
     // [lodMaxDistance(n-1), lodMaxDistance(n)).
@@ -444,7 +427,7 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
         if (it != loadedTiles.end()) {
             TerrainTile& tile = it->second;
             if (tile.arrayLayerIndex >= 0) {
-                tileArray_.freeLayer(tile.arrayLayerIndex);
+                tileArray_->freeLayer(tile.arrayLayerIndex);
             }
             loadedTiles.erase(it);
         }
@@ -503,7 +486,7 @@ void TerrainTileCache::updateActiveTiles(const glm::vec3& cameraPos, float loadR
     });
 
     // Update tile info buffer
-    tileInfoBuffer_.update(currentFrameIndex_, activeTiles);
+    tileInfoBuffer_->update(currentFrameIndex_, activeTiles);
 }
 
 bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
@@ -534,7 +517,7 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
     // Allocate a layer in the shared tile array and stage the CPU height data
     // directly into it. The array texture is the only resource the terrain shader
     // samples (see TerrainDescriptorSets), so no standalone per-tile image is needed.
-    int32_t layerIndex = tileArray_.allocateLayer();
+    int32_t layerIndex = tileArray_->allocateLayer();
     if (layerIndex < 0) {
         // No GPU layer available: the tile keeps its CPU data (height queries/physics
         // still work) but is not renderable. It stays CpuResident and will be retried
@@ -547,7 +530,7 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
     }
 
     tile.arrayLayerIndex = layerIndex;
-    tileArray_.copyTileToLayer(tile, static_cast<uint32_t>(layerIndex));
+    tileArray_->copyTileToLayer(tile, static_cast<uint32_t>(layerIndex));
     tile.state = TileState::Resident;
 
     SDL_Log("TerrainTileCache: Loaded tile (%d, %d) LOD%u layer %d - world bounds [%.0f,%.0f]-[%.0f,%.0f]%s",
@@ -555,7 +538,7 @@ bool TerrainTileCache::loadTile(TileCoord coord, uint32_t lod) {
             hasCpuData ? " (added GPU to existing)" : "");
 
     // Upload hole mask for this tile (only meaningful once it has an array layer)
-    holeMask_.uploadTileHoleMask(tile, tile.arrayLayerIndex);
+    holeMask_->uploadTileHoleMask(tile, tile.arrayLayerIndex);
 
     return true;
 }
@@ -599,7 +582,7 @@ bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight)
     }
 
     // Also check all loaded tiles (includes CPU-only tiles from physics preloading)
-    uint32_t baseLOD = baseHeightMap_.getBaseLOD();
+    uint32_t baseLOD = baseHeightMap_->getBaseLOD();
     std::vector<const TerrainTile*> sortedLoaded;
     for (const auto& [key, tile] : loadedTiles) {
         if (tile.lod == baseLOD) continue;
@@ -613,7 +596,7 @@ bool TerrainTileCache::getHeightAt(float worldX, float worldZ, float& outHeight)
     }
 
     // Fallback to base LOD tiles
-    return baseHeightMap_.sampleHeight(worldX, worldZ, outHeight);
+    return baseHeightMap_->sampleHeight(worldX, worldZ, outHeight);
 }
 
 TerrainTileCache::HeightQueryInfo TerrainTileCache::getHeightAtDebug(float worldX, float worldZ) const {
@@ -649,7 +632,7 @@ TerrainTileCache::HeightQueryInfo TerrainTileCache::getHeightAtDebug(float world
     }
 
     // Check loaded tiles (sorted by LOD, excluding baseLOD)
-    uint32_t baseLOD = baseHeightMap_.getBaseLOD();
+    uint32_t baseLOD = baseHeightMap_->getBaseLOD();
     std::vector<const TerrainTile*> sortedLoaded;
     for (const auto& [key, tile] : loadedTiles) {
         if (tile.lod == baseLOD) continue;
@@ -663,7 +646,7 @@ TerrainTileCache::HeightQueryInfo TerrainTileCache::getHeightAtDebug(float world
     }
 
     // Fallback to base LOD
-    const TerrainTile* baseTile = baseHeightMap_.getTileAt(worldX, worldZ);
+    const TerrainTile* baseTile = baseHeightMap_->getTileAt(worldX, worldZ);
     if (baseTile && !baseTile->cpuData.empty()) {
         sampleTile(*baseTile, "baseLOD");
     }
@@ -760,9 +743,8 @@ bool TerrainTileCache::loadBaseLODTiles() {
     baseInfo.tilesX = tilesX;
     baseInfo.tilesZ = tilesZ;
     baseInfo.numLODLevels = numLODLevels;
-    baseHeightMap_.init(baseInfo);
 
-    return baseHeightMap_.loadBaseLODTiles([this](int32_t tx, int32_t tz, uint32_t lod) -> TerrainTile* {
+    baseHeightMap_ = BaseHeightMap::create(baseInfo, [this](int32_t tx, int32_t tz, uint32_t lod) -> TerrainTile* {
         TileCoord coord{tx, tz};
         if (loadTileCPUOnly(coord, lod)) {
             uint64_t key = makeTileKey(coord, lod);
@@ -773,6 +755,7 @@ bool TerrainTileCache::loadBaseLODTiles() {
         }
         return nullptr;
     });
+    return baseHeightMap_ != nullptr;
 }
 
 std::vector<const TerrainTile*> TerrainTileCache::getAllCPUTiles() const {
@@ -791,22 +774,22 @@ std::vector<const TerrainTile*> TerrainTileCache::getAllCPUTiles() const {
 // ============================================================================
 
 bool TerrainTileCache::isHole(float x, float z) const {
-    return holeMask_.isHole(x, z);
+    return holeMask_->isHole(x, z);
 }
 
 void TerrainTileCache::addHoleCircle(float centerX, float centerZ, float radius) {
-    holeMask_.addHoleCircle(centerX, centerZ, radius, activeTiles);
+    holeMask_->addHoleCircle(centerX, centerZ, radius, activeTiles);
 }
 
 void TerrainTileCache::removeHoleCircle(float centerX, float centerZ, float radius) {
-    holeMask_.removeHoleCircle(centerX, centerZ, radius, activeTiles);
+    holeMask_->removeHoleCircle(centerX, centerZ, radius, activeTiles);
 }
 
 std::vector<uint8_t> TerrainTileCache::rasterizeHolesForTile(
     float tileMinX, float tileMinZ, float tileMaxX, float tileMaxZ, uint32_t resolution) const {
-    return holeMask_.rasterizeHolesForTile(tileMinX, tileMinZ, tileMaxX, tileMaxZ, resolution);
+    return holeMask_->rasterizeHolesForTile(tileMinX, tileMinZ, tileMaxX, tileMaxZ, resolution);
 }
 
 void TerrainTileCache::uploadHoleMaskToGPU() {
-    holeMask_.uploadAllActiveMasks(activeTiles);
+    holeMask_->uploadAllActiveMasks(activeTiles);
 }

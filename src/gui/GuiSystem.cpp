@@ -68,7 +68,8 @@ constexpr MenuCategory kMenuOrder[] = {
 
 // Factory
 std::unique_ptr<GuiSystem> GuiSystem::create(SDL_Window* window, vk::Instance instance,
-                                              vk::PhysicalDevice physicalDevice, vk::Device device,
+                                              vk::PhysicalDevice physicalDevice,
+                                              const vk::raii::Device& device,
                                               uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
                                               vk::RenderPass renderPass, uint32_t imageCount,
                                               RendererSystems& systems,
@@ -87,16 +88,19 @@ std::unique_ptr<GuiSystem> GuiSystem::create(SDL_Window* window, vk::Instance in
 
 GuiSystem::GuiSystem(ConstructToken) {}
 
-// Destructor
-GuiSystem::~GuiSystem() {
-    cleanup();
+// Destructor: members release in reverse declaration order, so the ImGui
+// backends/context (backend_) shut down before imguiPool_ is destroyed.
+GuiSystem::~GuiSystem() = default;
+
+GuiSystem::ImGuiBackend::~ImGuiBackend() {
+    if (vulkanInitialized) ImGui_ImplVulkan_Shutdown();
+    if (sdlInitialized) ImGui_ImplSDL3_Shutdown();
+    if (contextCreated) ImGui::DestroyContext();
 }
 
 bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::PhysicalDevice physicalDevice,
-                              vk::Device device, uint32_t graphicsQueueFamily, vk::Queue graphicsQueue,
-                              vk::RenderPass renderPass, uint32_t imageCount) {
-    device_ = device;  // Store for cleanup
-
+                              const vk::raii::Device& device, uint32_t graphicsQueueFamily,
+                              vk::Queue graphicsQueue, vk::RenderPass renderPass, uint32_t imageCount) {
     // Create descriptor pool for ImGui
     std::array<vk::DescriptorPoolSize, 11> poolSizes = {{
         {vk::DescriptorType::eSampler, 1000},
@@ -117,9 +121,8 @@ bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::Phys
         .setMaxSets(1000)
         .setPoolSizes(poolSizes);
 
-    vk::Device vkDevice(device);
     try {
-        imguiPool = vkDevice.createDescriptorPool(poolInfo);
+        imguiPool_.emplace(device, poolInfo);
     } catch (const vk::SystemError& e) {
         SDL_Log("Failed to create ImGui descriptor pool: %s", e.what());
         return false;
@@ -128,6 +131,7 @@ bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::Phys
     // Initialize ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    backend_.contextCreated = true;
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -145,14 +149,15 @@ bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::Phys
 
     // Setup Platform/Renderer backends
     ImGui_ImplSDL3_InitForVulkan(window);
+    backend_.sdlInitialized = true;
 
     ImGui_ImplVulkan_InitInfo initInfo = {};
     initInfo.Instance = instance;
     initInfo.PhysicalDevice = physicalDevice;
-    initInfo.Device = device;
+    initInfo.Device = *device;
     initInfo.QueueFamily = graphicsQueueFamily;
     initInfo.Queue = graphicsQueue;
-    initInfo.DescriptorPool = imguiPool;
+    initInfo.DescriptorPool = **imguiPool_;
     initInfo.MinImageCount = imageCount;
     initInfo.ImageCount = imageCount;
     // Since ImGui 1.92 (2025/09/26) the render pass / MSAA / subpass settings
@@ -171,6 +176,7 @@ bool GuiSystem::initInternal(SDL_Window* window, vk::Instance instance, vk::Phys
         SDL_Log("Failed to initialize ImGui Vulkan backend");
         return false;
     }
+    backend_.vulkanInitialized = true;
 
     // Setup custom style
     GuiStyle::apply();
@@ -269,20 +275,6 @@ void GuiSystem::buildPanelRegistry(GuiDebugTab::Hooks debugHooks,
         }});
     panels_.push_back({"Tile Loader", MenuCategory::Debug,
         [this](const GuiFrameContext& ctx) { tileLoaderTab_->draw(ctx); }});
-}
-
-void GuiSystem::cleanup() {
-    if (device_ == VK_NULL_HANDLE) return;  // Not initialized or already cleaned up
-
-    ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
-
-    if (imguiPool != VK_NULL_HANDLE) {
-        vk::Device(device_).destroyDescriptorPool(imguiPool);
-        imguiPool = VK_NULL_HANDLE;
-    }
-    device_ = VK_NULL_HANDLE;
 }
 
 void GuiSystem::processEvent(const SDL_Event& event) {

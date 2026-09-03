@@ -5,6 +5,7 @@
 #include "ShaderLoader.h"
 #include "PipelineBuilder.h"
 #include "core/vulkan/BarrierHelpers.h"
+#include "core/vulkan/VmaBufferFactory.h"
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <cstring>
@@ -64,10 +65,6 @@ std::optional<WeatherSystem::Bundle> WeatherSystem::createWithDependencies(
     };
 }
 
-WeatherSystem::~WeatherSystem() {
-    cleanup();
-}
-
 bool WeatherSystem::initInternal(const InitInfo& info) {
     // Store init info for accessors used during initialization
     storedDevice = info.device;
@@ -96,21 +93,13 @@ bool WeatherSystem::initInternal(const InitInfo& info) {
         return createGraphicsPipeline(initializingPS->getGraphicsPipelineHandles());
     };
     hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
-    hooks.destroyBuffers = [this](VmaAllocator allocator) { destroyBuffers(allocator); };
+    // Buffers are RAII members released by ~WeatherSystem; the helper requires
+    // a non-null hook, so give it a no-op (the buffer members are declared after
+    // particleSystem and are already gone when this would run).
+    hooks.destroyBuffers = [](VmaAllocator) {};
 
     particleSystem = ParticleSystem::create(info, hooks, info.framesInFlight, &initializingPS);
     return particleSystem != nullptr;
-}
-
-void WeatherSystem::cleanup() {
-    // RAII-managed subsystem destroyed automatically
-    particleSystem.reset();
-}
-
-void WeatherSystem::destroyBuffers(VmaAllocator alloc) {
-    BufferUtils::destroyBuffers(alloc, particleBuffers);
-    BufferUtils::destroyBuffers(alloc, indirectBuffers);
-    BufferUtils::destroyBuffers(alloc, uniformBuffers);
 }
 
 bool WeatherSystem::createBuffers() {
@@ -121,33 +110,43 @@ bool WeatherSystem::createBuffers() {
     // Use framesInFlight for buffer set count to ensure proper triple buffering
     uint32_t bufferSetCount = getFramesInFlight();
 
-    BufferUtils::DoubleBufferedBufferBuilder particleBuilder;
-    if (!particleBuilder.setAllocator(getAllocator())
-             .setSetCount(bufferSetCount)
-             .setSize(particleBufferSize)
-             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-             .build(particleBuffers)) {
-        SDL_Log("Failed to create weather particle buffers");
-        return false;
+    particleBuffers_.resize(bufferSetCount);
+    for (uint32_t i = 0; i < bufferSetCount; ++i) {
+        if (!BufferBuilder(getAllocator())
+                 .setSize(particleBufferSize)
+                 .asStorage()
+                 .asVertex()
+                 .build(particleBuffers_[i])) {
+            SDL_Log("Failed to create weather particle buffers");
+            return false;
+        }
     }
 
-    BufferUtils::DoubleBufferedBufferBuilder indirectBuilder;
-    if (!indirectBuilder.setAllocator(getAllocator())
-             .setSetCount(bufferSetCount)
-             .setSize(indirectBufferSize)
-             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
-             .build(indirectBuffers)) {
-        SDL_Log("Failed to create weather indirect buffers");
-        return false;
+    indirectBuffers_.resize(bufferSetCount);
+    for (uint32_t i = 0; i < bufferSetCount; ++i) {
+        if (!BufferBuilder(getAllocator())
+                 .setSize(indirectBufferSize)
+                 .asStorage()
+                 .asIndirect()
+                 .asTransferDst()
+                 .build(indirectBuffers_[i])) {
+            SDL_Log("Failed to create weather indirect buffers");
+            return false;
+        }
     }
 
-    BufferUtils::PerFrameBufferBuilder uniformBuilder;
-    if (!uniformBuilder.setAllocator(getAllocator())
-             .setFrameCount(getFramesInFlight())
-             .setSize(uniformBufferSize)
-             .build(uniformBuffers)) {
-        SDL_Log("Failed to create weather uniform buffers");
-        return false;
+    uniformBuffers_.resize(getFramesInFlight());
+    uniformMapped_.resize(getFramesInFlight(), nullptr);
+    for (uint32_t i = 0; i < getFramesInFlight(); ++i) {
+        if (!VmaBufferFactory::createUniformBuffer(getAllocator(), uniformBufferSize, uniformBuffers_[i])) {
+            SDL_Log("Failed to create weather uniform buffers");
+            return false;
+        }
+        uniformMapped_[i] = uniformBuffers_[i].map();
+        if (!uniformMapped_[i]) {
+            SDL_Log("Failed to create weather uniform buffers");
+            return false;
+        }
     }
 
     return true;
@@ -318,10 +317,10 @@ void WeatherSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::B
 
         // Compute descriptor set
         DescriptorManager::SetWriter(dev, particleSystem->getComputeDescriptorSet(set))
-            .writeBuffer(0, particleBuffers.buffers[inputSet], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(1, particleBuffers.buffers[outputSet], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(2, indirectBuffers.buffers[outputSet], 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(3, uniformBuffers.buffers[0], 0, sizeof(WeatherUniforms))
+            .writeBuffer(0, particleBuffers_[inputSet].get(), 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(1, particleBuffers_[outputSet].get(), 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, indirectBuffers_[outputSet].get(), 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(3, uniformBuffers_[0].get(), 0, sizeof(WeatherUniforms))
             .writeBuffer(4, windBuffers[0], 0, 32)  // sizeof(WindUniforms)
             .update();
 
@@ -334,7 +333,7 @@ void WeatherSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::B
             graphicsWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 320,
                                        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);  // sizeof(UniformBufferObject)
         }
-        graphicsWriter.writeBuffer(1, particleBuffers.buffers[set], 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        graphicsWriter.writeBuffer(1, particleBuffers_[set].get(), 0, sizeof(WeatherParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         graphicsWriter.writeImage(2, depthImageView, depthSampler, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
         graphicsWriter.update();
     }
@@ -385,7 +384,7 @@ void WeatherSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraP
     uniforms.intensity = weatherIntensity;
     uniforms.nearZoneRadius = 8.0f;
 
-    memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(WeatherUniforms));
+    memcpy(uniformMapped_[frameIndex], &uniforms, sizeof(WeatherUniforms));
 }
 
 void WeatherSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameIndex, float time, float deltaTime) {
@@ -398,7 +397,7 @@ void WeatherSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameI
 
     // Update compute descriptor set to use this frame's uniform buffers
     DescriptorManager::SetWriter(getDevice(), particleSystem->getComputeDescriptorSet(writeSet))
-        .writeBuffer(3, uniformBuffers.buffers[frameIndex], 0, sizeof(WeatherUniforms))
+        .writeBuffer(3, uniformBuffers_[frameIndex].get(), 0, sizeof(WeatherUniforms))
         .writeBuffer(4, externalWindBuffers[frameIndex], 0, 32)  // sizeof(WindUniforms)
         .update();
 
@@ -410,7 +409,7 @@ void WeatherSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameI
     BarrierHelpers::indirectDrawAndShaderToComputeWrite(vkCmd);
 
     // Reset indirect buffer before compute dispatch
-    vkCmd.fillBuffer(indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
+    vkCmd.fillBuffer(indirectBuffers_[writeSet].get(), 0, sizeof(VkDrawIndirectCommand), 0);
     BarrierHelpers::fillBufferToCompute(vkCmd);
 
     // Dispatch weather compute shader
@@ -489,7 +488,7 @@ void WeatherSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float
                                                0, pushConstants);
 
     // Indirect draw: 4 vertices per particle (quad)
-    vkCmd.drawIndirect(indirectBuffers.buffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));
+    vkCmd.drawIndirect(indirectBuffers_[readSet].get(), 0, 1, sizeof(VkDrawIndirectCommand));
 }
 
 void WeatherSystem::advanceBufferSet() { particleSystem->advanceBufferSet(); }
@@ -502,7 +501,7 @@ void WeatherSystem::setFroxelVolume(vk::ImageView volumeView, vk::Sampler volume
     froxelDepthDist = depthDist;
 
     // Update graphics descriptor sets with froxel volume
-    if (froxelVolumeView != VK_NULL_HANDLE && froxelVolumeSampler != VK_NULL_HANDLE) {
+    if (froxelVolumeView && froxelVolumeSampler) {
         uint32_t bufferSetCount = particleSystem->getBufferSetCount();
         for (uint32_t set = 0; set < bufferSetCount; set++) {
             DescriptorManager::SetWriter(getDevice(), particleSystem->getGraphicsDescriptorSet(set))

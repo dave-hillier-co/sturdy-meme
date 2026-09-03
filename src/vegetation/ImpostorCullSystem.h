@@ -13,8 +13,9 @@
 
 #include "CullCommon.h"
 #include "DescriptorManager.h"
-#include "PerFrameBuffer.h"
+#include "MappedFrameBuffers.h"
 #include "FrameIndexedBuffers.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "interfaces/ITemporalSystem.h"
 
 class TreeSystem;
@@ -90,6 +91,7 @@ public:
     };
 
     static std::unique_ptr<ImpostorCullSystem> create(const InitInfo& info);
+    // Waits for the device, then member destruction releases the RAII buffers and pipeline
     ~ImpostorCullSystem();
 
     // Non-copyable, non-movable
@@ -162,8 +164,8 @@ public:
                        const LODParams& lodParams);
 
     // Get output buffers for rendering
-    vk::Buffer getVisibleImpostorBuffer() const { return visibleImpostorBuffer_; }
-    vk::Buffer getIndirectDrawBuffer() const { return indirectDrawBuffer_; }
+    vk::Buffer getVisibleImpostorBuffer() const { return visibleImpostorBuffer_.get(); }
+    vk::Buffer getIndirectDrawBuffer() const { return indirectDrawBuffer_.get(); }
 
     // Get visible impostor count (read from GPU - may be stale)
     uint32_t getVisibleCount() const { return lastVisibleCount_; }
@@ -193,7 +195,6 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     bool createComputePipeline();
     bool createDescriptorSetLayout();
@@ -213,35 +214,32 @@ private:
     uint32_t maxTrees_ = 0;
     uint32_t maxArchetypes_ = 0;
 
-    // Compute pipeline
-    std::optional<vk::raii::Pipeline> cullPipeline_;
-    std::optional<vk::raii::PipelineLayout> cullPipelineLayout_;
+    // Compute pipeline (creation order: set layout -> pipeline layout -> pipeline;
+    // reverse member destruction releases them the other way round)
     std::optional<vk::raii::DescriptorSetLayout> cullDescriptorSetLayout_;
+    std::optional<vk::raii::PipelineLayout> cullPipelineLayout_;
+    std::optional<vk::raii::Pipeline> cullPipeline_;
 
     // Per-frame descriptor sets
     std::vector<vk::DescriptorSet> cullDescriptorSets_;
 
     // Tree input buffer (all trees)
-    vk::Buffer treeInputBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation treeInputAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer treeInputBuffer_;
     vk::DeviceSize treeInputBufferSize_ = 0;
 
     // Archetype data buffer
-    vk::Buffer archetypeBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation archetypeAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer archetypeBuffer_;
     vk::DeviceSize archetypeBufferSize_ = 0;
 
     // Visible impostor output buffer
-    vk::Buffer visibleImpostorBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation visibleImpostorAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer visibleImpostorBuffer_;
     vk::DeviceSize visibleImpostorBufferSize_ = 0;
 
     // Indirect draw command buffer
-    vk::Buffer indirectDrawBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation indirectDrawAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer indirectDrawBuffer_;
 
-    // Uniform buffers (per-frame)
-    BufferUtils::PerFrameBufferSet uniformBuffers_;
+    // Uniform buffers (per-frame, persistently mapped)
+    BufferUtils::MappedFrameBuffers uniformBuffers_;
 
     // Visibility cache buffers for temporal coherence (per-frame to avoid races)
     // Stores 1 bit per tree: 1 = visible as impostor, 0 = not visible

@@ -4,20 +4,25 @@
 #include <algorithm>
 #include <cmath>
 
-bool PhysicsTerrainTileManager::init(PhysicsWorld& physics, TerrainTileCache& tileCache, const Config& config) {
-    physics_ = std::ref(physics);
-    tileCache_ = std::ref(tileCache);
-    config_ = config;
-
-    SDL_Log("PhysicsTerrainTileManager: Initialized with loadRadius=%.0f, unloadRadius=%.0f",
-            config_.loadRadius, config_.unloadRadius);
-    return true;
+PhysicsTerrainTileManager::PhysicsTerrainTileManager(ConstructToken, PhysicsWorld& physics,
+                                                     TerrainTileCache& tileCache, const Config& config)
+    : physics_(physics)
+    , tileCache_(tileCache)
+    , config_(config) {
 }
 
-void PhysicsTerrainTileManager::cleanup() {
-    if (!physics_) return;  // Not initialized
+std::unique_ptr<PhysicsTerrainTileManager> PhysicsTerrainTileManager::create(
+    PhysicsWorld& physics, TerrainTileCache& tileCache, const Config& config) {
+    auto manager = std::make_unique<PhysicsTerrainTileManager>(ConstructToken{}, physics, tileCache, config);
+
+    SDL_Log("PhysicsTerrainTileManager: Initialized with loadRadius=%.0f, unloadRadius=%.0f",
+            config.loadRadius, config.unloadRadius);
+    return manager;
+}
+
+PhysicsTerrainTileManager::~PhysicsTerrainTileManager() {
     for (auto& [key, entry] : loadedTiles_) {
-        physics_->get().removeBody(entry.bodyID);
+        physics_.removeBody(entry.bodyID);
     }
     loadedTiles_.clear();
     SDL_Log("PhysicsTerrainTileManager: Cleaned up all physics tiles");
@@ -35,8 +40,8 @@ std::vector<PhysicsTerrainTileManager::TileRequest> PhysicsTerrainTileManager::c
     std::vector<TileRequest> result;
 
     const uint32_t lod = 0;
-    const uint32_t tilesX = tileCache_->get().getTilesX();
-    const uint32_t tilesZ = tileCache_->get().getTilesZ();
+    const uint32_t tilesX = tileCache_.getTilesX();
+    const uint32_t tilesZ = tileCache_.getTilesZ();
     const float tileWorldSize = config_.terrainSize / static_cast<float>(tilesX);
 
     // Calculate tile range covering loadRadius circle
@@ -89,7 +94,7 @@ bool PhysicsTerrainTileManager::loadPhysicsTile(int32_t tileX, int32_t tileZ, ui
     TileCoord coord{tileX, tileZ};
 
     // Load CPU data through tile cache
-    if (!tileCache_->get().loadTileCPUOnly(coord, lod)) {
+    if (!tileCache_.loadTileCPUOnly(coord, lod)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "PhysicsTerrainTileManager: Failed to load tile CPU data (%d, %d) LOD%u",
                     tileX, tileZ, lod);
@@ -97,7 +102,7 @@ bool PhysicsTerrainTileManager::loadPhysicsTile(int32_t tileX, int32_t tileZ, ui
     }
 
     // Get tile data from cache
-    const TerrainTile* tile = tileCache_->get().getLoadedTile(coord, lod);
+    const TerrainTile* tile = tileCache_.getLoadedTile(coord, lod);
     if (!tile || tile->cpuData.empty()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "PhysicsTerrainTileManager: Tile CPU data not available after load");
@@ -114,7 +119,7 @@ bool PhysicsTerrainTileManager::loadPhysicsTile(int32_t tileX, int32_t tileZ, ui
     uint32_t sampleCount = static_cast<uint32_t>(std::sqrt(tile->cpuData.size()));
 
     // Generate per-tile hole mask from tile cache
-    std::vector<uint8_t> tileHoleMask = tileCache_->get().rasterizeHolesForTile(
+    std::vector<uint8_t> tileHoleMask = tileCache_.rasterizeHolesForTile(
         tile->worldMinX, tile->worldMinZ,
         tile->worldMaxX, tile->worldMaxZ,
         sampleCount);
@@ -133,7 +138,7 @@ bool PhysicsTerrainTileManager::loadPhysicsTile(int32_t tileX, int32_t tileZ, ui
 
     // Tiles with overlap pixels have samples that align directly to world boundaries
     // (sample 0 at worldMin, sample N-1 at worldMax), so disable half-texel offset
-    PhysicsBodyID bodyID = physics_->get().createTerrainHeightfieldAtPosition(
+    PhysicsBodyID bodyID = physics_.createTerrainHeightfieldAtPosition(
         tile->cpuData.data(),
         tileHoleMask.data(),
         sampleCount,
@@ -176,7 +181,7 @@ void PhysicsTerrainTileManager::unloadPhysicsTile(uint64_t tileKey) {
     }
 
     const PhysicsTileEntry& entry = it->second;
-    physics_->get().removeBody(entry.bodyID);
+    physics_.removeBody(entry.bodyID);
 
     SDL_Log("PhysicsTerrainTileManager: Unloaded tile (%d, %d) LOD%u, bodyID=%u",
             entry.tileX, entry.tileZ, entry.lod, entry.bodyID);
@@ -185,9 +190,6 @@ void PhysicsTerrainTileManager::unloadPhysicsTile(uint64_t tileKey) {
 }
 
 void PhysicsTerrainTileManager::update(const glm::vec3& playerPosition) {
-    // Not initialized (e.g. terrain tile cache unavailable) - nothing to manage
-    if (!physics_ || !tileCache_) return;
-
     // Calculate required tiles at player position
     auto requiredTiles = calculateRequiredTiles(playerPosition);
 

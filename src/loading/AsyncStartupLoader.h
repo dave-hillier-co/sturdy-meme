@@ -45,8 +45,8 @@ public:
      */
     static std::unique_ptr<AsyncStartupLoader> create(const InitInfo& info);
 
-
-    ~AsyncStartupLoader();
+    // The job queue joins its workers in its own destructor.
+    ~AsyncStartupLoader() = default;
 
     // Non-copyable
     AsyncStartupLoader(const AsyncStartupLoader&) = delete;
@@ -115,11 +115,6 @@ public:
      */
     std::vector<LoadJobResult> getAllResults();
 
-    /**
-     * Shutdown and release resources
-     */
-    void shutdown();
-
 private:
     bool init(const InitInfo& info);
 
@@ -129,13 +124,14 @@ private:
     std::optional<std::reference_wrapper<LoadingRenderer>> loadingRenderer_;
     std::string resourcePath_;
 
+    // Collected results for deferred processing (declared before the queue so
+    // they are released after its workers have been joined)
+    std::vector<LoadJobResult> collectedResults_;
+
     std::unique_ptr<LoadJobQueue> jobQueue_;
     JobCompleteCallback jobCompleteCallback_;
 
     uint32_t queuedJobCount_ = 0;
-
-    // Collected results for deferred processing
-    std::vector<LoadJobResult> collectedResults_;
 };
 
 } // namespace Loading

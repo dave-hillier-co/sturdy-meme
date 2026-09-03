@@ -91,7 +91,8 @@ public:
 
 private:
     bool initInternal(const std::string& basePath, uint32_t workerCount);
-    void cleanup();
+    // Idempotent: signals workers to exit and joins them. Called from the destructor.
+    void stop();
 
     struct LoadRequest {
         TileId id;

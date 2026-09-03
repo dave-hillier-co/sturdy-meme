@@ -12,8 +12,9 @@
 
 #include "CullCommon.h"
 #include "DescriptorManager.h"
-#include "PerFrameBuffer.h"
+#include "MappedFrameBuffers.h"
 #include "FrameIndexedBuffers.h"
+#include "core/vulkan/VmaBuffer.h"
 
 class TreeSystem;
 class TreeLODSystem;
@@ -83,7 +84,8 @@ public:
     };
 
     static std::unique_ptr<TreeBranchCulling> create(const InitInfo& info);
-    ~TreeBranchCulling();
+    // Member-driven teardown: buffers, then pipeline -> pipeline layout -> descriptor set layout
+    ~TreeBranchCulling() = default;
 
     TreeBranchCulling(const TreeBranchCulling&) = delete;
     TreeBranchCulling& operator=(const TreeBranchCulling&) = delete;
@@ -124,7 +126,7 @@ public:
 
 
 private:
-    bool init(const InitInfo& info);
+    bool initInternal(const InitInfo& info);
 
     bool createCullPipeline();
     bool createBuffers();
@@ -144,20 +146,19 @@ private:
     // RAII device pointer
     const vk::raii::Device* raiiDevice_ = nullptr;
 
-    // Compute pipeline for GPU culling
-    std::optional<vk::raii::Pipeline> cullPipeline_;
-    std::optional<vk::raii::PipelineLayout> cullPipelineLayout_;
+    // Compute pipeline for GPU culling (declared in creation order so reverse
+    // member destruction releases pipeline, then layout, then set layout)
     std::optional<vk::raii::DescriptorSetLayout> cullDescriptorSetLayout_;
+    std::optional<vk::raii::PipelineLayout> cullPipelineLayout_;
+    std::optional<vk::raii::Pipeline> cullPipeline_;
     std::vector<vk::DescriptorSet> cullDescriptorSets_;
 
     // Input buffer: all tree transforms
-    vk::Buffer inputBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation inputAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer inputBuffer_;
     vk::DeviceSize inputBufferSize_ = 0;
 
     // Mesh group metadata buffer
-    vk::Buffer meshGroupBuffer_ = VK_NULL_HANDLE;
-    VmaAllocation meshGroupAllocation_ = VK_NULL_HANDLE;
+    VmaBuffer meshGroupBuffer_;
 
     // Per-frame output buffers using FrameIndexedBuffers for type-safe access
     BufferUtils::FrameIndexedBuffers outputBuffers_;
@@ -166,8 +167,8 @@ private:
     // Indirect draw command buffers (one command per mesh group per cascade)
     BufferUtils::FrameIndexedBuffers indirectBuffers_;
 
-    // Per-frame uniform buffers
-    BufferUtils::PerFrameBufferSet uniformBuffers_;
+    // Per-frame uniform buffers (persistently mapped)
+    BufferUtils::MappedFrameBuffers uniformBuffers_;
 
     // Mesh group metadata (CPU side)
     std::vector<BranchMeshGroupGPU> meshGroups_;

@@ -28,10 +28,6 @@ std::unique_ptr<GPUCullPass> GPUCullPass::create(const InitContext& ctx) {
     return create(info);
 }
 
-GPUCullPass::~GPUCullPass() {
-    cleanup();
-}
-
 bool GPUCullPass::initInternal(const InitInfo& info) {
     device_ = info.device;
     allocator_ = info.allocator;
@@ -64,16 +60,6 @@ bool GPUCullPass::initInternal(const InitInfo& info) {
     return true;
 }
 
-void GPUCullPass::cleanup() {
-    if (device_ == VK_NULL_HANDLE) return;
-
-    destroyDescriptorSets();
-    destroyBuffers();
-    destroyPipeline();
-
-    device_ = VK_NULL_HANDLE;
-}
-
 bool GPUCullPass::createPipeline() {
     // Descriptor set layout for culling:
     // Binding 0: Uniforms (UBO)
@@ -89,7 +75,7 @@ bool GPUCullPass::createPipeline() {
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 4: Hi-Z pyramid
         .build();
 
-    if (rawLayout == VK_NULL_HANDLE) {
+    if (!rawLayout) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUCullPass: Failed to create descriptor set layout");
         return false;
     }
@@ -111,17 +97,27 @@ bool GPUCullPass::createPipeline() {
 }
 
 bool GPUCullPass::createBuffers() {
-    // Create per-frame uniform buffers
-    bool success = BufferUtils::PerFrameBufferBuilder()
-        .setAllocator(allocator_)
-        .setFrameCount(framesInFlight_)
+    // Create per-frame uniform buffers (host-visible, persistently mapped)
+    auto bufferInfo = vk::BufferCreateInfo{}
         .setSize(sizeof(GPUCullUniforms))
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-        .build(uniformBuffers_);
+        .setUsage(vk::BufferUsageFlagBits::eUniformBuffer)
+        .setSharingMode(vk::SharingMode::eExclusive);
 
-    if (!success) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUCullPass: Failed to create uniform buffers");
-        return false;
+    VmaAllocationCreateInfo allocInfo{};
+    allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                      VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    uniformBuffers_.resize(framesInFlight_);
+    uniformMapped_.assign(framesInFlight_, nullptr);
+    for (uint32_t i = 0; i < framesInFlight_; ++i) {
+        if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, uniformBuffers_[i])) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUCullPass: Failed to create uniform buffers");
+            return false;
+        }
+        VmaAllocationInfo allocationInfo{};
+        vmaGetAllocationInfo(allocator_, uniformBuffers_[i].getAllocation(), &allocationInfo);
+        uniformMapped_[i] = allocationInfo.pMappedData;
     }
 
     return true;
@@ -139,25 +135,11 @@ bool GPUCullPass::createDescriptorSets() {
     // Scene buffers will be bound later via bindSceneBuffer()
     for (uint32_t i = 0; i < framesInFlight_; ++i) {
         DescriptorManager::SetWriter(device_, descSets_[i])
-            .writeBuffer(BINDING_SCENE_CULL_UNIFORMS, uniformBuffers_.buffers[i], 0, sizeof(GPUCullUniforms))
+            .writeBuffer(BINDING_SCENE_CULL_UNIFORMS, uniformBuffers_[i].get(), 0, sizeof(GPUCullUniforms))
             .update();
     }
 
     return true;
-}
-
-void GPUCullPass::destroyPipeline() {
-    pipeline_.reset();
-    pipelineLayout_.reset();
-    descSetLayout_.reset();
-}
-
-void GPUCullPass::destroyBuffers() {
-    BufferUtils::destroyBuffers(allocator_, uniformBuffers_);
-}
-
-void GPUCullPass::destroyDescriptorSets() {
-    descSets_.clear();
 }
 
 void GPUCullPass::updateUniforms(uint32_t frameIndex,
@@ -187,8 +169,8 @@ void GPUCullPass::updateUniforms(uint32_t frameIndex,
     extractFrustumPlanes(uniforms.viewProjMatrix, uniforms.frustumPlanes);
 
     // Copy to GPU
-    memcpy(uniformBuffers_.mappedPointers[frameIndex], &uniforms, sizeof(GPUCullUniforms));
-    vmaFlushAllocation(allocator_, uniformBuffers_.allocations[frameIndex], 0, sizeof(GPUCullUniforms));
+    memcpy(uniformMapped_[frameIndex], &uniforms, sizeof(GPUCullUniforms));
+    vmaFlushAllocation(allocator_, uniformBuffers_[frameIndex].getAllocation(), 0, sizeof(GPUCullUniforms));
 }
 
 void GPUCullPass::bindSceneBuffer(GPUSceneBuffer* sceneBuffer, uint32_t frameIndex) {
@@ -203,13 +185,13 @@ void GPUCullPass::bindSceneBuffer(GPUSceneBuffer* sceneBuffer, uint32_t frameInd
     }
 
     // Validate descriptor set
-    if (descSets_.empty() || descSets_[frameIndex] == VK_NULL_HANDLE) {
+    if (descSets_.empty() || !descSets_[frameIndex]) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUCullPass::bindSceneBuffer: Descriptor set is null for frame %u", frameIndex);
         return;
     }
 
     // Validate uniform buffer
-    if (uniformBuffers_.buffers.empty() || uniformBuffers_.buffers[frameIndex] == VK_NULL_HANDLE) {
+    if (uniformBuffers_.empty() || !uniformBuffers_[frameIndex]) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUCullPass::bindSceneBuffer: Uniform buffer is null for frame %u", frameIndex);
         return;
     }
@@ -233,22 +215,22 @@ void GPUCullPass::bindSceneBuffer(GPUSceneBuffer* sceneBuffer, uint32_t frameInd
     }
 
     // Validate device
-    if (device_ == VK_NULL_HANDLE) {
+    if (!device_) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "GPUCullPass::bindSceneBuffer: Device is null");
         return;
     }
 
     // Build descriptor buffer infos
     std::array<vk::DescriptorBufferInfo, 4> bufferInfos = {{
-        {uniformBuffers_.buffers[frameIndex], 0, sizeof(GPUCullUniforms)},
+        {uniformBuffers_[frameIndex].get(), 0, sizeof(GPUCullUniforms)},
         {cullObjBuffer, 0, VK_WHOLE_SIZE},
         {indirectBuffer, 0, VK_WHOLE_SIZE},
         {countBuffer, 0, sizeof(uint32_t)}
     }};
 
     // Get Hi-Z or placeholder image
-    vk::ImageView imageView = hiZPyramidView_ != VK_NULL_HANDLE ? vk::ImageView(hiZPyramidView_) : vk::ImageView(placeholderImageView_);
-    vk::Sampler sampler = hiZSampler_ != VK_NULL_HANDLE ? vk::Sampler(hiZSampler_) : vk::Sampler(placeholderSampler_);
+    vk::ImageView imageView = hiZPyramidView_ ? hiZPyramidView_ : placeholderImageView_;
+    vk::Sampler sampler = hiZSampler_ ? hiZSampler_ : placeholderSampler_;
 
     if (!imageView || !sampler) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "GPUCullPass::bindSceneBuffer: No Hi-Z or placeholder image available for binding 4");
@@ -322,7 +304,7 @@ void GPUCullPass::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex) {
 }
 
 vk::Buffer GPUCullPass::getUniformBuffer(uint32_t frameIndex) const {
-    return uniformBuffers_.buffers[frameIndex];
+    return uniformBuffers_[frameIndex].get();
 }
 
 GPUCullPass::CullingStats GPUCullPass::getStats(uint32_t frameIndex) const {

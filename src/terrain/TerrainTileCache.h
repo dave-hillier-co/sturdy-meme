@@ -128,10 +128,10 @@ public:
     bool isTileLoaded(TileCoord coord, uint32_t lod) const;
 
     // Get sampler for tile textures
-    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::Sampler getSampler() const { return sampler_ ? **sampler_ : vk::Sampler{}; }
 
     // Get tile array image view (sampler2DArray)
-    vk::ImageView getTileArrayView() const { return tileArray_.getArrayView(); }
+    vk::ImageView getTileArrayView() const { return tileArray_->getArrayView(); }
 
     // Get active tile count and descriptors for shader binding
     uint32_t getActiveTileCount() const { return static_cast<uint32_t>(activeTiles.size()); }
@@ -146,7 +146,7 @@ public:
     // The buffer is written by CPU during updateActiveTiles() and read by GPU shaders.
     // Using the wrong frame's buffer causes flickering artifacts.
     vk::Buffer getTileInfoBuffer(uint32_t frameIndex) const {
-        return tileInfoBuffer_.getBuffer(frameIndex);
+        return tileInfoBuffer_->getBuffer(frameIndex);
     }
 
     // Update which frame we're writing to (call during updateActiveTiles)
@@ -185,24 +185,24 @@ public:
     bool loadBaseLODTiles();
 
     // Check if base LOD tiles are loaded
-    bool hasBaseLODTiles() const { return baseHeightMap_.hasBaseTiles(); }
+    bool hasBaseLODTiles() const { return baseHeightMap_ && baseHeightMap_->hasBaseTiles(); }
 
     // Get base heightmap texture (combined from LOD3 tiles) for GPU fallback
-    vk::ImageView getBaseHeightMapView() const { return baseHeightMap_.getHeightMapView(); }
-    vk::Sampler getBaseHeightMapSampler() const { return sampler_ ? **sampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getBaseHeightMapView() const { return baseHeightMap_->getHeightMapView(); }
+    vk::Sampler getBaseHeightMapSampler() const { return sampler_ ? **sampler_ : vk::Sampler{}; }
 
     // Get base heightmap CPU data for fallback height queries
-    const std::vector<float>& getBaseHeightMapData() const { return baseHeightMap_.getHeightMapData(); }
-    uint32_t getBaseHeightMapResolution() const { return baseHeightMap_.getHeightMapResolution(); }
+    const std::vector<float>& getBaseHeightMapData() const { return baseHeightMap_->getHeightMapData(); }
+    uint32_t getBaseHeightMapResolution() const { return baseHeightMap_->getHeightMapResolution(); }
 
     // Hole mask GPU resource accessors (tiled array texture)
-    vk::ImageView getHoleMaskArrayView() const { return holeMask_.getArrayView(); }
-    vk::Sampler getHoleMaskSampler() const { return holeMask_.getSampler(); }
+    vk::ImageView getHoleMaskArrayView() const { return holeMask_->getArrayView(); }
+    vk::Sampler getHoleMaskSampler() const { return holeMask_->getSampler(); }
 
     // Hole management - geometric primitives rasterized on demand
     void addHoleCircle(float centerX, float centerZ, float radius);
     void removeHoleCircle(float centerX, float centerZ, float radius);
-    const std::vector<TerrainHole>& getHoles() const { return holeMask_.getHoles(); }
+    const std::vector<TerrainHole>& getHoles() const { return holeMask_->getHoles(); }
 
     // Query if a point is inside any hole (analytical, not rasterized)
     bool isHole(float x, float z) const;
@@ -224,7 +224,6 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     // Load a single tile from disk at native resolution (NO downsampling)
     bool loadTile(TileCoord coord, uint32_t lod);
@@ -260,25 +259,12 @@ private:
     // Calculate world bounds for a tile at given LOD
     void calculateTileWorldBounds(TileCoord coord, uint32_t lod, TerrainTile& tile) const;
 
-    // Sub-components (composition)
-    TileArrayManager tileArray_;
-    HoleMaskManager holeMask_;
-    TileInfoBuffer tileInfoBuffer_;
-    BaseHeightMap baseHeightMap_;
-
-    // Background disk loader (worker threads). Disk I/O for streamed tiles runs
-    // off the render thread; updateActiveTiles() enqueues requests and drains
-    // completed CPU tiles. May be null if creation failed, in which case the
-    // cache falls back to synchronous loads.
-    std::unique_ptr<TerrainTileDiskLoader> diskLoader_;
-
-    // Vulkan resources
+    // Borrowed Vulkan handles (not owned)
     const vk::raii::Device* raiiDevice_ = nullptr;
-    vk::Device device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
-    vk::Queue graphicsQueue = VK_NULL_HANDLE;
-    vk::CommandPool commandPool = VK_NULL_HANDLE;
-    std::optional<vk::raii::Sampler> sampler_;
+    vk::Device device;
+    VmaAllocator allocator = nullptr;
+    vk::Queue graphicsQueue;
+    vk::CommandPool commandPool;
 
     uint32_t currentFrameIndex_ = 0;
 
@@ -295,11 +281,32 @@ private:
     uint32_t sourceWidth = 16384;
     uint32_t sourceHeight = 16384;
 
+    // Owned resources. Members are destroyed in reverse declaration order, so the
+    // ordering below encodes the teardown dependencies:
+    //   diskLoader_ (joins worker threads) -> baseHeightMap_ (holds pointers into
+    //   loadedTiles) -> activeTiles/loadedTiles -> GPU sub-components -> sampler_.
+    std::optional<vk::raii::Sampler> sampler_;
+
+    // Sub-components (composition)
+    std::unique_ptr<TileArrayManager> tileArray_;
+    std::unique_ptr<TileInfoBuffer> tileInfoBuffer_;
+    std::unique_ptr<HoleMaskManager> holeMask_;
+
     // All loaded tiles (keyed by coord + LOD)
     std::unordered_map<uint64_t, TerrainTile> loadedTiles;
 
     // Active tiles for current frame (pointers into loadedTiles)
     std::vector<TerrainTile*> activeTiles;
+
+    // Base LOD tiles + combined fallback heightmap (holds pointers into loadedTiles)
+    std::unique_ptr<BaseHeightMap> baseHeightMap_;
+
+    // Background disk loader (worker threads). Disk I/O for streamed tiles runs
+    // off the render thread; updateActiveTiles() enqueues requests and drains
+    // completed CPU tiles. May be null if creation failed, in which case the
+    // cache falls back to synchronous loads. Declared last so its threads are
+    // joined before any other member is destroyed.
+    std::unique_ptr<TerrainTileDiskLoader> diskLoader_;
 
     // Maximum active tiles (limits GPU memory usage)
     static constexpr uint32_t MAX_ACTIVE_TILES = 64;

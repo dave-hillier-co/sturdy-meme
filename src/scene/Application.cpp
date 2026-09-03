@@ -180,7 +180,6 @@ bool Application::init(const std::string& title, int width, int height) {
             renderer_->cancelAsyncInit();
         }
         if (loadingRenderer) {
-            loadingRenderer->cleanup();
             loadingRenderer.reset();
         }
         shutdown();
@@ -284,7 +283,6 @@ bool Application::init(const std::string& title, int width, int height) {
     // warnings pause until the render loop takes over.
     InitProfiler::get().setPresentingActive(false);
     if (loadingRenderer) {
-        loadingRenderer->cleanup();
         loadingRenderer.reset();
     }
 
@@ -310,11 +308,11 @@ bool Application::init(const std::string& title, int width, int height) {
 
         const VulkanContext& vkCtx = renderer_->getVulkanContext();
         gui_ = GuiSystem::create(window, vkCtx.getVkInstance(), vkCtx.getVkPhysicalDevice(),
-                                  vkCtx.getVkDevice(), vkCtx.getGraphicsQueueFamily(),
+                                  vkCtx.getRaiiDevice(), vkCtx.getGraphicsQueueFamily(),
                                   vkCtx.getVkGraphicsQueue(), vkCtx.getRenderPass(),
                                   vkCtx.getSwapchainImageCount(),
                                   renderer_->getSystems(), std::move(debugHooks),
-                                  &physicsTerrainManager_, &debugCommands_);
+                                  physicsTerrainManager_.get(), &debugCommands_);
         if (!gui_) {
             SDL_Log("Failed to initialize GUI system");
             abortInit();
@@ -467,7 +465,8 @@ bool Application::setupWorld(std::future<std::optional<PhysicsWorld>> physicsFut
             config.terrainSize = terrain->getConfig().size;
             config.heightScale = terrain->getConfig().heightScale;
 
-            if (physicsTerrainManager_.init(physics(), *tileCache, config)) {
+            physicsTerrainManager_ = PhysicsTerrainTileManager::create(physics(), *tileCache, config);
+            if (physicsTerrainManager_) {
                 SDL_Log("Physics terrain tile manager initialized");
 
                 // Pre-load physics terrain tiles around scene origin (where objects are placed)
@@ -475,7 +474,7 @@ bool Application::setupWorld(std::future<std::optional<PhysicsWorld>> physicsFut
                 const float halfTerrain = 8192.0f;
                 glm::vec3 sceneSpawnPos(11000.0f - halfTerrain, 0.0f, 5200.0f - halfTerrain);
                 for (int i = 0; i < 50; i++) {  // Load up to 50 tiles synchronously
-                    physicsTerrainManager_.update(sceneSpawnPos);
+                    physicsTerrainManager_->update(sceneSpawnPos);
                 }
                 SDL_Log("Pre-loaded physics terrain tiles around scene origin (%.0f, %.0f)",
                         sceneSpawnPos.x, sceneSpawnPos.z);
@@ -1264,8 +1263,7 @@ void Application::run() {
                     if (ragdoll.hasNaNState(physics())) {
                         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                     "Destroying ragdoll with NaN physics state");
-                        ragdoll.destroy(physics());
-                        return true;
+                        return true;  // erase destroys it (removes from physics)
                     }
                     return false;
                 }),
@@ -1273,7 +1271,9 @@ void Application::run() {
 
         // Update physics terrain tiles based on player position
         glm::vec3 playerPos = physics().getCharacterPosition();
-        physicsTerrainManager_.update(playerPos);
+        if (physicsTerrainManager_) {
+            physicsTerrainManager_->update(playerPos);
+        }
 
         // Sync player entity position from physics character controller
         glm::vec3 physicsVelocity = physics().getCharacterVelocity();
@@ -1454,15 +1454,9 @@ void Application::shutdown() {
     gui_.reset();  // RAII cleanup via destructor
     // InputSystem cleanup handled by destructor (RAII)
 
-    // Destroy ragdolls before physics world
-    if (physics_) {
-        for (auto& ragdoll : ragdolls_) {
-            ragdoll.destroy(physics());
-        }
-    }
+    // Destroy ragdolls and physics terrain tiles before the physics world
     ragdolls_.clear();
-
-    physicsTerrainManager_.cleanup();
+    physicsTerrainManager_.reset();
     physics_.reset();  // RAII cleanup via optional reset
     renderer_.reset();  // RAII cleanup via unique_ptr reset
 
@@ -2037,8 +2031,10 @@ void Application::teleportTo(float worldX, float worldZ) {
     if (physics_) {
         physics().setCharacterPosition(player_.transform.position);
         // Pre-load physics terrain tiles around the destination
-        for (int i = 0; i < 50; i++) {
-            physicsTerrainManager_.update(player_.transform.position);
+        if (physicsTerrainManager_) {
+            for (int i = 0; i < 50; i++) {
+                physicsTerrainManager_->update(player_.transform.position);
+            }
         }
     }
 
@@ -2076,9 +2072,8 @@ void Application::spawnRagdoll() {
     // Spawn 5m above the player position
     glm::vec3 spawnPos = player_.transform.position + glm::vec3(0.0f, 5.0f, 0.0f);
 
-    ArticulatedBody ragdoll;
-    if (ragdoll.create(physics(), config, spawnPos)) {
-        ragdolls_.push_back(std::move(ragdoll));
+    if (auto ragdoll = ArticulatedBody::create(physics(), config, spawnPos)) {
+        ragdolls_.push_back(std::move(*ragdoll));
         SDL_Log("Spawned ragdoll at (%.1f, %.1f, %.1f) - total ragdolls: %zu",
                 spawnPos.x, spawnPos.y, spawnPos.z, ragdolls_.size());
     } else {

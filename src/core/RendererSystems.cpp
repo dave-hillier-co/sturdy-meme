@@ -89,7 +89,13 @@ RendererSystems::RendererSystems() {
 }
 
 RendererSystems::~RendererSystems() {
-    // SystemRegistry destructor handles reverse-order cleanup
+    SDL_Log("RendererSystems::destroy starting");
+
+    // SystemRegistry::destroyAll() destroys in reverse registration order,
+    // which mirrors the original reverse-dependency destruction.
+    registry_.destroyAll();
+
+    SDL_Log("RendererSystems::destroy complete");
 }
 
 // ============================================================================
@@ -280,21 +286,6 @@ void RendererSystems::setDebugLineSystem(std::unique_ptr<DebugLineSystem> system
 
 void RendererSystems::setProfiler(std::unique_ptr<Profiler> profiler) {
     registry_.add<Profiler>(std::move(profiler));
-}
-
-void RendererSystems::destroy(vk::Device device, VmaAllocator allocator) {
-    SDL_Log("RendererSystems::destroy starting");
-
-    // GPUSceneBuffer needs explicit cleanup before its destructor
-    if (auto* gpuScene = registry_.find<GPUSceneBuffer>()) {
-        gpuScene->cleanup();
-    }
-
-    // SystemRegistry::destroyAll() destroys in reverse registration order,
-    // which mirrors the original reverse-dependency destruction.
-    registry_.destroyAll();
-
-    SDL_Log("RendererSystems::destroy complete");
 }
 
 CoreResources RendererSystems::getCoreResources(uint32_t framesInFlight) const {

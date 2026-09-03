@@ -9,7 +9,6 @@
 #include <optional>
 #include <string>
 
-#include "core/PerFrameBuffer.h"
 #include "core/vulkan/VmaBuffer.h"
 #include "material/DescriptorManager.h"
 #include "core/InitContext.h"
@@ -64,7 +63,7 @@ public:
     static std::unique_ptr<GPUCullPass> create(const InitInfo& info);
     static std::unique_ptr<GPUCullPass> create(const InitContext& ctx);
 
-    ~GPUCullPass();
+    ~GPUCullPass() = default;
 
     // Non-copyable, non-movable
     GPUCullPass(const GPUCullPass&) = delete;
@@ -109,21 +108,16 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     bool createPipeline();
     bool createBuffers();
     bool createDescriptorSets();
 
-    void destroyPipeline();
-    void destroyBuffers();
-    void destroyDescriptorSets();
-
     // Extract frustum planes from view-projection matrix
     static void extractFrustumPlanes(const glm::mat4& viewProj, glm::vec4 planes[6]);
 
-    vk::Device device_ = VK_NULL_HANDLE;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
+    vk::Device device_{};
+    VmaAllocator allocator_ = nullptr;
     DescriptorManager::Pool* descriptorPool_ = nullptr;
     std::string shaderPath_;
     uint32_t framesInFlight_ = 0;
@@ -137,20 +131,21 @@ private:
     // Per-frame descriptor sets
     std::vector<vk::DescriptorSet> descSets_;
 
-    // Per-frame uniform buffers
-    BufferUtils::PerFrameBufferSet uniformBuffers_;
+    // Per-frame uniform buffers (RAII, persistently mapped)
+    std::vector<ManagedBuffer> uniformBuffers_;
+    std::vector<void*> uniformMapped_;
 
     // Currently bound scene buffer
     GPUSceneBuffer* currentSceneBuffer_ = nullptr;
 
     // Hi-Z pyramid reference (optional)
-    vk::ImageView hiZPyramidView_ = VK_NULL_HANDLE;
-    vk::Sampler hiZSampler_ = VK_NULL_HANDLE;
+    vk::ImageView hiZPyramidView_{};
+    vk::Sampler hiZSampler_{};
     bool hiZEnabled_ = false;
 
     // Placeholder image for descriptor binding when Hi-Z is unavailable
-    vk::ImageView placeholderImageView_ = VK_NULL_HANDLE;
-    vk::Sampler placeholderSampler_ = VK_NULL_HANDLE;
+    vk::ImageView placeholderImageView_{};
+    vk::Sampler placeholderSampler_{};
 
     // Workgroup size (must match shader)
     static constexpr uint32_t WORKGROUP_SIZE = 64;

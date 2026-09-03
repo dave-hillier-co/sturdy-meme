@@ -2,6 +2,7 @@
 #include "VmaImage.h"
 #include "SamplerFactory.h"
 #include "core/ImageBuilder.h"
+#include "core/vulkan/VmaBufferFactory.h"
 #include <SDL3/SDL_log.h>
 #include <vulkan/vulkan.hpp>
 
@@ -115,55 +116,46 @@ bool AtmosphereLUTSystem::createLUTSampler() {
 }
 
 bool AtmosphereLUTSystem::createUniformBuffer() {
-    // Create static uniform buffer for one-time LUT computations (frame count of 1 for consistency)
-    BufferUtils::PerFrameBufferBuilder staticBuilder;
-    if (!staticBuilder.setAllocator(allocator)
-             .setFrameCount(1)
-             .setSize(sizeof(AtmosphereUniforms))
-             .build(staticUniformBuffers)) {
+    // Create static uniform buffer for one-time LUT computations
+    if (!VmaBufferFactory::createUniformBuffer(allocator, sizeof(AtmosphereUniforms), staticUniformBuffer_)) {
+        SDL_Log("Failed to create static atmosphere uniform buffer");
+        return false;
+    }
+    staticUniformMapped_ = staticUniformBuffer_.map();
+    if (!staticUniformMapped_) {
         SDL_Log("Failed to create static atmosphere uniform buffer");
         return false;
     }
 
     // Create per-frame uniform buffers for sky view LUT updates (double-buffered)
-    BufferUtils::PerFrameBufferBuilder skyViewBuilder;
-    if (!skyViewBuilder.setAllocator(allocator)
-             .setFrameCount(framesInFlight)
-             .setSize(sizeof(AtmosphereUniforms))
-             .build(skyViewUniformBuffers)) {
-        SDL_Log("Failed to create sky view per-frame uniform buffers");
-        return false;
+    skyViewUniformBuffers_.resize(framesInFlight);
+    skyViewUniformMapped_.resize(framesInFlight, nullptr);
+    for (uint32_t i = 0; i < framesInFlight; ++i) {
+        if (!VmaBufferFactory::createUniformBuffer(allocator, sizeof(AtmosphereUniforms), skyViewUniformBuffers_[i])) {
+            SDL_Log("Failed to create sky view per-frame uniform buffers");
+            return false;
+        }
+        skyViewUniformMapped_[i] = skyViewUniformBuffers_[i].map();
+        if (!skyViewUniformMapped_[i]) {
+            SDL_Log("Failed to create sky view per-frame uniform buffers");
+            return false;
+        }
     }
 
     // Create per-frame uniform buffers for cloud map LUT updates (double-buffered)
-    BufferUtils::PerFrameBufferBuilder cloudMapBuilder;
-    if (!cloudMapBuilder.setAllocator(allocator)
-             .setFrameCount(framesInFlight)
-             .setSize(sizeof(CloudMapUniforms))
-             .build(cloudMapUniformBuffers)) {
-        SDL_Log("Failed to create cloud map per-frame uniform buffers");
-        return false;
+    cloudMapUniformBuffers_.resize(framesInFlight);
+    cloudMapUniformMapped_.resize(framesInFlight, nullptr);
+    for (uint32_t i = 0; i < framesInFlight; ++i) {
+        if (!VmaBufferFactory::createUniformBuffer(allocator, sizeof(CloudMapUniforms), cloudMapUniformBuffers_[i])) {
+            SDL_Log("Failed to create cloud map per-frame uniform buffers");
+            return false;
+        }
+        cloudMapUniformMapped_[i] = cloudMapUniformBuffers_[i].map();
+        if (!cloudMapUniformMapped_[i]) {
+            SDL_Log("Failed to create cloud map per-frame uniform buffers");
+            return false;
+        }
     }
 
     return true;
-}
-
-void AtmosphereLUTSystem::destroyLUTResources() {
-    transmittanceLUTView.reset();
-    transmittanceLUT.reset();
-
-    multiScatterLUTView.reset();
-    multiScatterLUT.reset();
-
-    skyViewLUTView.reset();
-    skyViewLUT.reset();
-
-    rayleighIrradianceLUTView.reset();
-    rayleighIrradianceLUT.reset();
-
-    mieIrradianceLUTView.reset();
-    mieIrradianceLUT.reset();
-
-    cloudMapLUTView.reset();
-    cloudMapLUT.reset();
 }

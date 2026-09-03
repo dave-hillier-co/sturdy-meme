@@ -12,32 +12,13 @@
 
 std::unique_ptr<TreeBranchCulling> TreeBranchCulling::create(const InitInfo& info) {
     auto culling = std::make_unique<TreeBranchCulling>(ConstructToken{});
-    if (!culling->init(info)) {
+    if (!culling->initInternal(info)) {
         return nullptr;
     }
     return culling;
 }
 
-TreeBranchCulling::~TreeBranchCulling() {
-    // Reset RAII types first
-    cullPipeline_.reset();
-    cullPipelineLayout_.reset();
-    cullDescriptorSetLayout_.reset();
-
-    // outputBuffers_ and indirectBuffers_ are FrameIndexedBuffers
-    // which clean up automatically via their destructor
-
-    BufferUtils::destroyBuffers(allocator_, uniformBuffers_);
-
-    if (inputBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, inputBuffer_, inputAllocation_);
-    }
-    if (meshGroupBuffer_ != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(allocator_, meshGroupBuffer_, meshGroupAllocation_);
-    }
-}
-
-bool TreeBranchCulling::init(const InitInfo& info) {
+bool TreeBranchCulling::initInternal(const InitInfo& info) {
     device_ = info.device;
     physicalDevice_ = info.physicalDevice;
     allocator_ = info.allocator;
@@ -119,14 +100,14 @@ bool TreeBranchCulling::createBuffers() {
     allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
     allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&inputBuffer_), &inputAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, inputBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeBranchCulling: Failed to create input buffer");
         return false;
     }
 
     // Mesh group metadata buffer
     bufferInfo.setSize(maxMeshGroups_ * sizeof(BranchMeshGroupGPU));
-    if (vmaCreateBuffer(allocator_, reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo), &allocInfo, reinterpret_cast<VkBuffer*>(&meshGroupBuffer_), &meshGroupAllocation_, nullptr) != VK_SUCCESS) {
+    if (!VmaBuffer::create(allocator_, bufferInfo, allocInfo, meshGroupBuffer_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeBranchCulling: Failed to create mesh group buffer");
         return false;
     }
@@ -150,12 +131,12 @@ bool TreeBranchCulling::createBuffers() {
     }
 
     // Uniform buffers (per-frame)
-    if (!BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator_)
-            .setFrameCount(maxFramesInFlight_)
-            .setSize(sizeof(BranchShadowCullUniforms))
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .build(uniformBuffers_)) {
+    BufferUtils::PerFrameBufferBuilder uniformBuilder;
+    uniformBuilder.setAllocator(allocator_)
+        .setFrameCount(maxFramesInFlight_)
+        .setSize(sizeof(BranchShadowCullUniforms))
+        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    if (!BufferUtils::MappedFrameBuffers::build(allocator_, uniformBuilder, uniformBuffers_)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "TreeBranchCulling: Failed to create uniform buffers");
         return false;
     }
@@ -178,7 +159,7 @@ void TreeBranchCulling::updateDescriptorSets() {
 
         // Input buffer (binding 0)
         auto inputBufferInfo = vk::DescriptorBufferInfo{}
-            .setBuffer(inputBuffer_)
+            .setBuffer(inputBuffer_.get())
             .setOffset(0)
             .setRange(inputBufferSize_);
 
@@ -196,13 +177,13 @@ void TreeBranchCulling::updateDescriptorSets() {
 
         // Uniform buffer (binding 3)
         auto uniformBufferInfo = vk::DescriptorBufferInfo{}
-            .setBuffer(uniformBuffers_.buffers[i])
+            .setBuffer(uniformBuffers_.get(i))
             .setOffset(0)
             .setRange(sizeof(BranchShadowCullUniforms));
 
         // Mesh group buffer (binding 4)
         auto meshGroupBufferInfo = vk::DescriptorBufferInfo{}
-            .setBuffer(meshGroupBuffer_)
+            .setBuffer(meshGroupBuffer_.get())
             .setOffset(0)
             .setRange(maxMeshGroups_ * sizeof(BranchMeshGroupGPU));
 
@@ -251,7 +232,7 @@ void TreeBranchCulling::updateDescriptorSets() {
 
 void TreeBranchCulling::updateTreeData(const TreeSystem& treeSystem, const TreeLODSystem* lodSystem) {
     // Guard: buffers may not exist if pipeline creation failed (graceful degradation)
-    if (inputBuffer_ == VK_NULL_HANDLE || meshGroupBuffer_ == VK_NULL_HANDLE) {
+    if (!inputBuffer_ || !meshGroupBuffer_) {
         return;
     }
 
@@ -340,8 +321,7 @@ void TreeBranchCulling::updateTreeData(const TreeSystem& treeSystem, const TreeL
     }
 
     // Upload input data
-    void* mappedInput = nullptr;
-    vmaMapMemory(allocator_, inputAllocation_, &mappedInput);
+    void* mappedInput = inputBuffer_.map();
 
     auto* inputData = static_cast<BranchShadowInputGPU*>(mappedInput);
     for (uint32_t i = 0; i < numTrees_; ++i) {
@@ -357,13 +337,12 @@ void TreeBranchCulling::updateTreeData(const TreeSystem& treeSystem, const TreeL
         );
     }
 
-    vmaUnmapMemory(allocator_, inputAllocation_);
+    inputBuffer_.unmap();
 
     // Upload mesh group metadata
-    void* mappedGroups = nullptr;
-    vmaMapMemory(allocator_, meshGroupAllocation_, &mappedGroups);
+    void* mappedGroups = meshGroupBuffer_.map();
     std::memcpy(mappedGroups, meshGroups_.data(), meshGroups_.size() * sizeof(BranchMeshGroupGPU));
-    vmaUnmapMemory(allocator_, meshGroupAllocation_);
+    meshGroupBuffer_.unmap();
 
     // Initialize descriptor sets if needed
     if (cullPipeline_.has_value()) {
@@ -420,10 +399,8 @@ void TreeBranchCulling::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex
     uniforms.numTrees = numTrees_;
     uniforms.numMeshGroups = static_cast<uint32_t>(meshGroups_.size());
 
-    void* mappedUniforms = nullptr;
-    vmaMapMemory(allocator_, uniformBuffers_.allocations[frameIndex], &mappedUniforms);
-    std::memcpy(mappedUniforms, &uniforms, sizeof(uniforms));
-    vmaUnmapMemory(allocator_, uniformBuffers_.allocations[frameIndex]);
+    // Per-frame uniform buffers are persistently mapped (host-coherent)
+    std::memcpy(uniformBuffers_.mapped(frameIndex), &uniforms, sizeof(uniforms));
 
     // Bind pipeline and descriptor set
     vk::CommandBuffer vkCmd(cmd);

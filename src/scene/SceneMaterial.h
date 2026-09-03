@@ -48,8 +48,11 @@ public:
         static MaterialProperties defaults() { return {0.7f, 0.0f, true}; }
     };
 
-    SceneMaterial() = default;
-    ~SceneMaterial();
+    explicit SceneMaterial(MaterialProperties props = MaterialProperties::defaults())
+        : materialProps_(props) {}
+    // Members release themselves: meshes_ (Mesh frees GPU buffers in ~Mesh) and
+    // the unique_ptr textures, in reverse declaration order.
+    ~SceneMaterial() = default;
 
     // Non-copyable, non-movable (owns GPU resources)
     SceneMaterial(const SceneMaterial&) = delete;
@@ -58,9 +61,18 @@ public:
     SceneMaterial& operator=(SceneMaterial&&) = delete;
 
     /**
-     * Initialize with Vulkan context for resource management
+     * Set material properties used when rebuilding scene objects
      */
-    void init(const InitInfo& info, const MaterialProperties& matProps = MaterialProperties::defaults());
+    void setMaterialProperties(const MaterialProperties& matProps) { materialProps_ = matProps; }
+
+    /**
+     * Transitional shim for callers that still pass a Vulkan InitInfo: the
+     * material owns no raw handles, so only the properties are used.
+     * Prefer setMaterialProperties(); InitInfo/init() are scheduled for removal.
+     */
+    void init(const InitInfo&, const MaterialProperties& matProps = MaterialProperties::defaults()) {
+        setMaterialProperties(matProps);
+    }
 
     /**
      * Set the meshes for this material (transfers ownership)
@@ -104,7 +116,8 @@ public:
         std::function<glm::mat4(const SceneObjectInstance&, const glm::mat4&)> transformModifier = nullptr);
 
     /**
-     * Release all GPU resources
+     * Release all content (meshes, textures, instances, scene objects).
+     * Idempotent; the destructor releases the same members automatically.
      */
     void cleanup();
 
@@ -135,17 +148,10 @@ public:
     // Material properties
     const MaterialProperties& getMaterialProperties() const { return materialProps_; }
 
-    // Check if initialized and has content
-    bool isInitialized() const { return initialized_; }
+    // Check if the material has content
     bool hasContent() const { return !instances_.empty() && !meshes_.empty(); }
 
 private:
-    bool initialized_ = false;
-
-    // Vulkan context (stored for cleanup)
-    VmaAllocator storedAllocator_ = VK_NULL_HANDLE;
-    vk::Device storedDevice_ = VK_NULL_HANDLE;
-
     // Material properties for renderables
     MaterialProperties materialProps_;
 

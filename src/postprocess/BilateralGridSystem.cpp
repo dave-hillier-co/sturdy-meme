@@ -52,9 +52,7 @@ std::unique_ptr<BilateralGridSystem> BilateralGridSystem::create(const InitConte
     return create(info);
 }
 
-BilateralGridSystem::~BilateralGridSystem() {
-    cleanup();
-}
+BilateralGridSystem::~BilateralGridSystem() = default;
 
 bool BilateralGridSystem::initInternal(const InitInfo& info) {
     device = info.device;
@@ -81,29 +79,6 @@ bool BilateralGridSystem::initInternal(const InitInfo& info) {
     SDL_Log("BilateralGridSystem: Initialized %ux%ux%u grid",
             GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH);
     return true;
-}
-
-void BilateralGridSystem::cleanup() {
-    if (device == VK_NULL_HANDLE) return;
-
-    vk::Device(device).waitIdle();
-
-    destroyGridResources();
-
-    BufferUtils::destroyBuffers(allocator, buildUniformBuffers);
-    BufferUtils::destroyBuffers(allocator, blurUniformBuffers);
-
-    buildDescriptorSetLayout_.reset();
-    buildPipelineLayout_.reset();
-    buildPipeline_.reset();
-
-    blurDescriptorSetLayout_.reset();
-    blurPipelineLayout_.reset();
-    blurPipeline_.reset();
-
-    gridSampler_.reset();
-
-    device = VK_NULL_HANDLE;
 }
 
 bool BilateralGridSystem::createGridTextures() {
@@ -153,14 +128,6 @@ bool BilateralGridSystem::createGridTextures() {
     return true;
 }
 
-void BilateralGridSystem::destroyGridResources() {
-    // RAII: views before images
-    for (int i = 0; i < 2; i++) {
-        gridViews[i].reset();
-        gridImages[i].reset();
-    }
-}
-
 bool BilateralGridSystem::createSampler() {
     // Use factory for linear clamp sampler
     gridSampler_ = SamplerFactory::createSamplerLinearClampLimitedMip(*raiiDevice_, 0.0f);
@@ -202,25 +169,27 @@ bool BilateralGridSystem::createUniformBuffers() {
     vk::DeviceSize buildSize = sizeof(BilateralBuildUniforms);
     vk::DeviceSize blurSize = sizeof(BilateralBlurUniforms);
 
-    if (!BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(framesInFlight)
-            .setSize(buildSize)
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .setMemoryUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
-            .build(buildUniformBuffers)) {
+    if (!PerFrameOwnedBuffers::build(allocator,
+            BufferUtils::PerFrameBufferBuilder()
+                .setAllocator(allocator)
+                .setFrameCount(framesInFlight)
+                .setSize(buildSize)
+                .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+                .setMemoryUsage(VMA_MEMORY_USAGE_CPU_TO_GPU),
+            buildUniformBuffers)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "BilateralGridSystem: Failed to create build uniform buffers");
         return false;
     }
 
-    if (!BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(framesInFlight)
-            .setSize(blurSize)
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .setMemoryUsage(VMA_MEMORY_USAGE_CPU_TO_GPU)
-            .build(blurUniformBuffers)) {
+    if (!PerFrameOwnedBuffers::build(allocator,
+            BufferUtils::PerFrameBufferBuilder()
+                .setAllocator(allocator)
+                .setFrameCount(framesInFlight)
+                .setSize(blurSize)
+                .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
+                .setMemoryUsage(VMA_MEMORY_USAGE_CPU_TO_GPU),
+            blurUniformBuffers)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "BilateralGridSystem: Failed to create blur uniform buffers");
         return false;
@@ -266,7 +235,7 @@ bool BilateralGridSystem::createDescriptorSets() {
     buildDescriptorSets.resize(framesInFlight);
     for (uint32_t i = 0; i < framesInFlight; i++) {
         buildDescriptorSets[i] = descriptorPool->allocateSingle(**buildDescriptorSetLayout_);
-        if (buildDescriptorSets[i] == VK_NULL_HANDLE) {
+        if (!buildDescriptorSets[i]) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                         "BilateralGridSystem: Failed to allocate build descriptor set %u", i);
             return false;
@@ -283,9 +252,9 @@ bool BilateralGridSystem::createDescriptorSets() {
         blurDescriptorSetsY[i] = descriptorPool->allocateSingle(**blurDescriptorSetLayout_);
         blurDescriptorSetsZ[i] = descriptorPool->allocateSingle(**blurDescriptorSetLayout_);
 
-        if (blurDescriptorSetsX[i] == VK_NULL_HANDLE ||
-            blurDescriptorSetsY[i] == VK_NULL_HANDLE ||
-            blurDescriptorSetsZ[i] == VK_NULL_HANDLE) {
+        if (!blurDescriptorSetsX[i] ||
+            !blurDescriptorSetsY[i] ||
+            !blurDescriptorSetsZ[i]) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                         "BilateralGridSystem: Failed to allocate blur descriptor sets %u", i);
             return false;
@@ -295,7 +264,7 @@ bool BilateralGridSystem::createDescriptorSets() {
         // X blur: grid[0] -> grid[1]
         // Y blur: grid[1] -> grid[0]
         // Z blur: grid[0] -> grid[1] (final output in grid[1], but we'll copy back)
-        auto bufferInfo = makeBufferInfo(blurUniformBuffers.buffers[i], 0, sizeof(BilateralBlurUniforms));
+        auto bufferInfo = makeBufferInfo(blurUniformBuffers.buffer(i), 0, sizeof(BilateralBlurUniforms));
 
         // X: 0 -> 1
         DescriptorWriter()
@@ -416,9 +385,9 @@ void BilateralGridSystem::recordBilateralGrid(vk::CommandBuffer cmd, uint32_t fr
     buildUniforms.sigmaRange = 0.5f;
 
     void* data;
-    vmaMapMemory(allocator, buildUniformBuffers.allocations[frameIndex], &data);
+    vmaMapMemory(allocator, buildUniformBuffers.allocation(frameIndex), &data);
     memcpy(data, &buildUniforms, sizeof(buildUniforms));
-    vmaUnmapMemory(allocator, buildUniformBuffers.allocations[frameIndex]);
+    vmaUnmapMemory(allocator, buildUniformBuffers.allocation(frameIndex));
 
     // Update build descriptor set with HDR input
     auto hdrInfo = vk::DescriptorImageInfo{}
@@ -427,7 +396,7 @@ void BilateralGridSystem::recordBilateralGrid(vk::CommandBuffer cmd, uint32_t fr
         .setSampler(**gridSampler_);
 
     auto gridInfo = makeStorageImageInfo(**gridViews[0]);
-    auto bufferInfo = makeBufferInfo(buildUniformBuffers.buffers[frameIndex], 0, sizeof(BilateralBuildUniforms));
+    auto bufferInfo = makeBufferInfo(buildUniformBuffers.buffer(frameIndex), 0, sizeof(BilateralBuildUniforms));
 
     DescriptorWriter()
         .add(WriteBuilder::combinedImageSampler(0, hdrInfo))
@@ -463,9 +432,9 @@ void BilateralGridSystem::recordBilateralGrid(vk::CommandBuffer cmd, uint32_t fr
 
     // X blur: grid[0] -> grid[1]
     blurUniforms.axis = 0;
-    vmaMapMemory(allocator, blurUniformBuffers.allocations[frameIndex], &data);
+    vmaMapMemory(allocator, blurUniformBuffers.allocation(frameIndex), &data);
     memcpy(data, &blurUniforms, sizeof(blurUniforms));
-    vmaUnmapMemory(allocator, blurUniformBuffers.allocations[frameIndex]);
+    vmaUnmapMemory(allocator, blurUniformBuffers.allocation(frameIndex));
 
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **blurPipelineLayout_,
                              0, vk::DescriptorSet(blurDescriptorSetsX[frameIndex]), {});
@@ -476,9 +445,9 @@ void BilateralGridSystem::recordBilateralGrid(vk::CommandBuffer cmd, uint32_t fr
 
     // Y blur: grid[1] -> grid[0]
     blurUniforms.axis = 1;
-    vmaMapMemory(allocator, blurUniformBuffers.allocations[frameIndex], &data);
+    vmaMapMemory(allocator, blurUniformBuffers.allocation(frameIndex), &data);
     memcpy(data, &blurUniforms, sizeof(blurUniforms));
-    vmaUnmapMemory(allocator, blurUniformBuffers.allocations[frameIndex]);
+    vmaUnmapMemory(allocator, blurUniformBuffers.allocation(frameIndex));
 
     vkCmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, **blurPipelineLayout_,
                              0, vk::DescriptorSet(blurDescriptorSetsY[frameIndex]), {});

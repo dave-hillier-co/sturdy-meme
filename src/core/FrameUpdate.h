@@ -48,7 +48,7 @@ struct FrameUpdate {
     // UBOs, bone matrices, builds FrameData, runs per-system updates, and
     // populates the GPU scene buffer.
     static Result run(RendererSystems& systems,
-                      AsyncTransferManager& transferManager,
+                      AsyncTransferManager* transferManager,  // may be null (sync transfers)
                       const Camera& camera,
                       uint32_t frameIndex,
                       VkExtent2D extent,

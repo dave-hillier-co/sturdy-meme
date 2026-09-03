@@ -20,7 +20,7 @@ std::unique_ptr<HiZSystem> HiZSystem::create(const InitInfo& info) {
     return system;
 }
 
-std::unique_ptr<HiZSystem> HiZSystem::create(const InitContext& ctx, VkFormat depthFormat_) {
+std::unique_ptr<HiZSystem> HiZSystem::create(const InitContext& ctx, vk::Format depthFormat_) {
     InitInfo info{};
     info.device = ctx.device;
     info.allocator = ctx.allocator;
@@ -33,9 +33,7 @@ std::unique_ptr<HiZSystem> HiZSystem::create(const InitContext& ctx, VkFormat de
     return create(info);
 }
 
-HiZSystem::~HiZSystem() {
-    cleanup();
-}
+HiZSystem::~HiZSystem() = default;
 
 bool HiZSystem::initInternal(const InitInfo& info) {
     device = info.device;
@@ -81,17 +79,6 @@ bool HiZSystem::initInternal(const InitInfo& info) {
     return true;
 }
 
-void HiZSystem::cleanup() {
-    if (device == VK_NULL_HANDLE) return;
-
-    destroyDescriptorSets();
-    destroyBuffers();
-    destroyPipelines();
-    destroyHiZPyramid();
-
-    device = VK_NULL_HANDLE;
-}
-
 void HiZSystem::resize(VkExtent2D newExtent) {
     if (newExtent.width == extent.width && newExtent.height == extent.height) {
         return;
@@ -105,8 +92,10 @@ void HiZSystem::resize(VkExtent2D newExtent) {
     destroyHiZPyramid();
     createHiZPyramid();
 
-    // Recreate descriptor sets (they reference the pyramid)
-    destroyDescriptorSets();
+    // Recreate descriptor sets (they reference the pyramid). The old sets are
+    // pool-owned and are released with the pool, never freed individually.
+    pyramidDescSets.clear();
+    cullingDescSets.clear();
     createDescriptorSets();
 }
 
@@ -154,7 +143,7 @@ bool HiZSystem::createPyramidPipeline() {
         .addStorageImage(VK_SHADER_STAGE_COMPUTE_BIT)          // 2: Destination Hi-Z mip
         .build();
 
-    if (rawLayout == VK_NULL_HANDLE) {
+    if (!rawLayout) {
         SDL_Log("HiZSystem: Failed to create pyramid descriptor set layout");
         return false;
     }
@@ -190,7 +179,7 @@ bool HiZSystem::createCullingPipeline() {
         .addCombinedImageSampler(VK_SHADER_STAGE_COMPUTE_BIT)  // 4: Hi-Z pyramid
         .build();
 
-    if (rawLayout == VK_NULL_HANDLE) {
+    if (!rawLayout) {
         SDL_Log("HiZSystem: Failed to create culling descriptor set layout");
         return false;
     }
@@ -210,17 +199,6 @@ bool HiZSystem::createCullingPipeline() {
         .buildInto(cullingPipeline_);
 }
 
-void HiZSystem::destroyPipelines() {
-    // RAII wrappers handle cleanup automatically
-    cullingPipeline_.reset();
-    cullingPipelineLayout_.reset();
-    cullingDescSetLayout_.reset();
-
-    pyramidPipeline_.reset();
-    pyramidPipelineLayout_.reset();
-    pyramidDescSetLayout_.reset();
-}
-
 bool HiZSystem::createBuffers() {
     vk::DeviceSize objectBufferSize = sizeof(CullObjectData) * MAX_OBJECTS;
 
@@ -233,13 +211,14 @@ bool HiZSystem::createBuffers() {
 
     // Create indirect draw buffers (per frame)
     vk::DeviceSize indirectBufferSize = sizeof(DrawIndexedIndirectCommand) * MAX_OBJECTS;
-    bool success = BufferUtils::PerFrameBufferBuilder()
-        .setAllocator(allocator)
-        .setFrameCount(framesInFlight)
-        .setSize(indirectBufferSize)
-        .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
-        .setAllocationFlags(0)  // GPU-only
-        .build(indirectDrawBuffers);
+    bool success = PerFrameOwnedBuffers::build(allocator,
+        BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator)
+            .setFrameCount(framesInFlight)
+            .setSize(indirectBufferSize)
+            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
+            .setAllocationFlags(0),  // GPU-only
+        indirectDrawBuffers);
 
     if (!success) {
         SDL_Log("HiZSystem: Failed to create indirect draw buffers");
@@ -247,14 +226,15 @@ bool HiZSystem::createBuffers() {
     }
 
     // Create draw count buffers (per frame)
-    success = BufferUtils::PerFrameBufferBuilder()
-        .setAllocator(allocator)
-        .setFrameCount(framesInFlight)
-        .setSize(sizeof(uint32_t))
-        .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                  VK_BUFFER_USAGE_TRANSFER_DST_BIT)
-        .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
-        .build(drawCountBuffers);
+    success = PerFrameOwnedBuffers::build(allocator,
+        BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator)
+            .setFrameCount(framesInFlight)
+            .setSize(sizeof(uint32_t))
+            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT),
+        drawCountBuffers);
 
     if (!success) {
         SDL_Log("HiZSystem: Failed to create draw count buffers");
@@ -262,12 +242,13 @@ bool HiZSystem::createBuffers() {
     }
 
     // Create uniform buffers (per frame)
-    success = BufferUtils::PerFrameBufferBuilder()
-        .setAllocator(allocator)
-        .setFrameCount(framesInFlight)
-        .setSize(sizeof(HiZCullUniforms))
-        .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-        .build(uniformBuffers);
+    success = PerFrameOwnedBuffers::build(allocator,
+        BufferUtils::PerFrameBufferBuilder()
+            .setAllocator(allocator)
+            .setFrameCount(framesInFlight)
+            .setSize(sizeof(HiZCullUniforms))
+            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT),
+        uniformBuffers);
 
     if (!success) {
         SDL_Log("HiZSystem: Failed to create uniform buffers");
@@ -275,15 +256,6 @@ bool HiZSystem::createBuffers() {
     }
 
     return true;
-}
-
-void HiZSystem::destroyBuffers() {
-    BufferUtils::destroyBuffers(allocator, uniformBuffers);
-    BufferUtils::destroyBuffers(allocator, drawCountBuffers);
-    BufferUtils::destroyBuffers(allocator, indirectDrawBuffers);
-
-    // RAII-managed object data buffer (via reset)
-    objectDataBuffer_.reset();
 }
 
 bool HiZSystem::createDescriptorSets() {
@@ -304,21 +276,15 @@ bool HiZSystem::createDescriptorSets() {
     for (uint32_t i = 0; i < framesInFlight; ++i) {
         // Update culling descriptor set using SetWriter
         DescriptorManager::SetWriter(device, cullingDescSets[i])
-            .writeBuffer(0, uniformBuffers.buffers[i], 0, sizeof(HiZCullUniforms))
+            .writeBuffer(0, uniformBuffers.buffer(i), 0, sizeof(HiZCullUniforms))
             .writeBuffer(1, objectDataBuffer_.get(), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(2, indirectDrawBuffers.buffers[i], 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-            .writeBuffer(3, drawCountBuffers.buffers[i], 0, sizeof(uint32_t), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(2, indirectDrawBuffers.buffer(i), 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+            .writeBuffer(3, drawCountBuffers.buffer(i), 0, sizeof(uint32_t), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             .writeImage(4, **hiZPyramid.fullView, **hiZSampler_)
             .update();
     }
 
     return true;
-}
-
-void HiZSystem::destroyDescriptorSets() {
-    // Descriptor sets are freed when the pool is destroyed/reset
-    pyramidDescSets.clear();
-    cullingDescSets.clear();
 }
 
 void HiZSystem::setDepthBuffer(vk::ImageView depthView, vk::Sampler depthSampler) {
@@ -365,7 +331,7 @@ void HiZSystem::updateUniforms(uint32_t frameIndex, const glm::mat4& view, const
     extractFrustumPlanes(uniforms.viewProjMatrix, uniforms.frustumPlanes);
 
     // Copy to GPU
-    memcpy(uniformBuffers.mappedPointers[frameIndex], &uniforms, sizeof(HiZCullUniforms));
+    memcpy(uniformBuffers.mapped[frameIndex], &uniforms, sizeof(HiZCullUniforms));
 }
 
 void HiZSystem::updateObjectData(const std::vector<CullObjectData>& objects) {
@@ -446,7 +412,7 @@ void HiZSystem::gatherObjects(const std::vector<ecs::RenderData>& sceneObjects,
 }
 
 void HiZSystem::recordPyramidGeneration(vk::CommandBuffer cmd, uint32_t frameIndex) {
-    if (sourceDepthView == VK_NULL_HANDLE) {
+    if (!sourceDepthView) {
         return;
     }
 
@@ -512,7 +478,7 @@ void HiZSystem::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex) {
     vk::CommandBuffer vkCmd(cmd);
 
     // Reset draw count to zero
-    vkCmd.fillBuffer(drawCountBuffers.buffers[frameIndex], 0, sizeof(uint32_t), 0);
+    vkCmd.fillBuffer(drawCountBuffers.buffer(frameIndex), 0, sizeof(uint32_t), 0);
 
     // Barrier after fillBuffer
     BarrierHelpers::fillBufferToCompute(vkCmd);
@@ -532,25 +498,25 @@ void HiZSystem::recordCulling(vk::CommandBuffer cmd, uint32_t frameIndex) {
 
 
 vk::Buffer HiZSystem::getIndirectDrawBuffer(uint32_t frameIndex) const {
-    return indirectDrawBuffers.buffers[frameIndex];
+    return indirectDrawBuffers.buffer(frameIndex);
 }
 
 vk::Buffer HiZSystem::getDrawCountBuffer(uint32_t frameIndex) const {
-    return drawCountBuffers.buffers[frameIndex];
+    return drawCountBuffers.buffer(frameIndex);
 }
 
 uint32_t HiZSystem::getVisibleCount(uint32_t frameIndex) const {
-    if (drawCountBuffers.mappedPointers.empty()) {
+    if (drawCountBuffers.mapped.empty()) {
         return 0;
     }
-    return *static_cast<uint32_t*>(drawCountBuffers.mappedPointers[frameIndex]);
+    return *static_cast<uint32_t*>(drawCountBuffers.mapped[frameIndex]);
 }
 
 vk::ImageView HiZSystem::getHiZMipView(uint32_t mipLevel) const {
     if (mipLevel < hiZPyramid.mipViews.size() && hiZPyramid.mipViews[mipLevel]) {
         return **hiZPyramid.mipViews[mipLevel];
     }
-    return VK_NULL_HANDLE;
+    return vk::ImageView{};
 }
 
 void HiZSystem::extractFrustumPlanes(const glm::mat4& viewProj, glm::vec4 planes[6]) {

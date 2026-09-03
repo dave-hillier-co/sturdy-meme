@@ -16,7 +16,7 @@ std::unique_ptr<VirtualTextureTileLoader> VirtualTextureTileLoader::create(const
 }
 
 VirtualTextureTileLoader::~VirtualTextureTileLoader() {
-    cleanup();
+    stop();
 }
 
 bool VirtualTextureTileLoader::initInternal(const std::string& path, uint32_t workerCount) {
@@ -34,7 +34,7 @@ bool VirtualTextureTileLoader::initInternal(const std::string& path, uint32_t wo
     return true;
 }
 
-void VirtualTextureTileLoader::cleanup() {
+void VirtualTextureTileLoader::stop() {
     {
         std::lock_guard<std::mutex> lock(queueMutex);
         running = false;
@@ -47,18 +47,6 @@ void VirtualTextureTileLoader::cleanup() {
         }
     }
     workers.clear();
-
-    // Clear remaining data
-    {
-        std::lock_guard<std::mutex> lock(queueMutex);
-        while (!requestQueue.empty()) requestQueue.pop();
-        queuedTiles.clear();
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(loadedMutex);
-        loadedTiles.clear();
-    }
 }
 
 void VirtualTextureTileLoader::queueTile(TileId id, int priority) {

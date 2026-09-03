@@ -13,14 +13,14 @@
 #include "Camera.h"
 
 FrameUpdate::Result FrameUpdate::run(RendererSystems& systems,
-                                     AsyncTransferManager& transferManager,
+                                     AsyncTransferManager* transferManager,
                                      const Camera& camera,
                                      uint32_t frameIndex,
                                      VkExtent2D extent,
                                      const Config& config) {
     Result out;
 
-    transferManager.processPendingTransfers();
+    if (transferManager) transferManager->processPendingTransfers();
 
     // Per-frame data updates
     TimingData timing = systems.time().update();

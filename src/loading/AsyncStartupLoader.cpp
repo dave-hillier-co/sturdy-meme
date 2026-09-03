@@ -16,10 +16,6 @@ std::unique_ptr<AsyncStartupLoader> AsyncStartupLoader::create(const InitInfo& i
     return loader;
 }
 
-AsyncStartupLoader::~AsyncStartupLoader() {
-    shutdown();
-}
-
 bool AsyncStartupLoader::init(const InitInfo& info) {
     if (info.loadingRenderer) {
         loadingRenderer_.emplace(*info.loadingRenderer);
@@ -232,14 +228,6 @@ LoadProgress AsyncStartupLoader::getProgress() const {
 
 std::vector<LoadJobResult> AsyncStartupLoader::getAllResults() {
     return std::move(collectedResults_);
-}
-
-void AsyncStartupLoader::shutdown() {
-    if (jobQueue_) {
-        jobQueue_->shutdown();
-        jobQueue_.reset();
-    }
-    collectedResults_.clear();
 }
 
 } // namespace Loading

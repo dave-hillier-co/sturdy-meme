@@ -3,14 +3,17 @@
 #include <fstream>
 #include <vector>
 
-PipelineCache::~PipelineCache() {
-    shutdown();
+std::optional<PipelineCache> PipelineCache::create(const vk::raii::Device& raiiDevice,
+                                                   const std::string& cacheFilePath) {
+    PipelineCache cache(raiiDevice, cacheFilePath);
+    if (!cache.pipelineCache_) {
+        return std::nullopt;
+    }
+    return std::optional<PipelineCache>(std::move(cache));
 }
 
-bool PipelineCache::init(const vk::raii::Device& raiiDevice, const std::string& filePath) {
-    device_ = &raiiDevice;
-    cacheFilePath_ = filePath;
-
+PipelineCache::PipelineCache(const vk::raii::Device& raiiDevice, std::string filePath)
+    : device_(&raiiDevice), cacheFilePath_(std::move(filePath)) {
     // Try to load existing cache data from file
     std::vector<char> cacheData;
     if (loadFromFile()) {
@@ -32,7 +35,7 @@ bool PipelineCache::init(const vk::raii::Device& raiiDevice, const std::string& 
     try {
         pipelineCache_.emplace(*device_, createInfo);
         SDL_Log("PipelineCache: Initialized successfully");
-        return true;
+        return;
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "PipelineCache: Failed to create pipeline cache: %s", e.what());
@@ -44,23 +47,18 @@ bool PipelineCache::init(const vk::raii::Device& raiiDevice, const std::string& 
                 auto emptyCreateInfo = vk::PipelineCacheCreateInfo{};
                 pipelineCache_.emplace(*device_, emptyCreateInfo);
                 SDL_Log("PipelineCache: Initialized successfully (with empty cache)");
-                return true;
+                return;
             } catch (const vk::SystemError& e2) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                     "PipelineCache: Failed to create empty pipeline cache: %s", e2.what());
-                return false;
             }
         }
-        return false;
     }
 }
 
-void PipelineCache::shutdown() {
-    if (pipelineCache_) {
-        saveToFile();
-        pipelineCache_.reset();  // RAII handles destruction
-    }
-    device_ = nullptr;
+PipelineCache::~PipelineCache() {
+    // A moved-from cache holds a null handle and saves nothing.
+    saveToFile();
 }
 
 bool PipelineCache::loadFromFile() {
@@ -69,7 +67,7 @@ bool PipelineCache::loadFromFile() {
 }
 
 bool PipelineCache::saveToFile() {
-    if (!pipelineCache_ || !device_) {
+    if (!pipelineCache_ || !**pipelineCache_ || !device_) {
         return false;
     }
 

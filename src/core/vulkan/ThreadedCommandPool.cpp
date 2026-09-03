@@ -2,14 +2,18 @@
 #include "VulkanContext.h"
 #include <SDL3/SDL_log.h>
 
-bool ThreadedCommandPool::initialize(VulkanContext& context, uint32_t threadCount) {
-    if (initialized_) {
-        return true;
+std::unique_ptr<ThreadedCommandPool> ThreadedCommandPool::create(VulkanContext& context, uint32_t threadCount) {
+    auto pool = std::make_unique<ThreadedCommandPool>(ConstructToken{}, context, threadCount);
+    if (!pool->isInitialized()) {
+        return nullptr;  // partially created pools die with the object
     }
+    return pool;
+}
 
-    device_ = context.getVkDevice();
-    graphicsQueueFamily_ = context.getGraphicsQueueFamily();
-    threadCount_ = threadCount;
+ThreadedCommandPool::ThreadedCommandPool(ConstructToken, VulkanContext& context, uint32_t threadCount)
+    : device_(context.getVkDevice())
+    , graphicsQueueFamily_(context.getGraphicsQueueFamily())
+    , threadCount_(threadCount) {
 
     // Calculate total pools needed: frames × threads
     // As mentioned in video: "we need to take the number of frames in flight
@@ -54,27 +58,15 @@ bool ThreadedCommandPool::initialize(VulkanContext& context, uint32_t threadCoun
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
             "ThreadedCommandPool: Failed to create pools: %s", e.what());
-        shutdown();
-        return false;
-    }
-
-    initialized_ = true;
-    SDL_Log("ThreadedCommandPool: Initialized with %u command pools", totalPools);
-    return true;
-}
-
-void ThreadedCommandPool::shutdown() {
-    if (!initialized_) {
+        pools_.clear();
         return;
     }
 
-    pools_.clear();
-    initialized_ = false;
-    SDL_Log("ThreadedCommandPool: Shutdown complete");
+    SDL_Log("ThreadedCommandPool: Initialized with %u command pools", totalPools);
 }
 
 void ThreadedCommandPool::resetFrame(uint32_t frameIndex) {
-    if (!initialized_ || frameIndex >= MAX_FRAMES_IN_FLIGHT) {
+    if (pools_.empty() || frameIndex >= MAX_FRAMES_IN_FLIGHT) {
         return;
     }
 
@@ -91,7 +83,7 @@ void ThreadedCommandPool::resetFrame(uint32_t frameIndex) {
 }
 
 vk::CommandBuffer ThreadedCommandPool::allocatePrimary(uint32_t frameIndex, uint32_t threadId) {
-    if (!initialized_ || frameIndex >= MAX_FRAMES_IN_FLIGHT || threadId >= threadCount_) {
+    if (pools_.empty() || frameIndex >= MAX_FRAMES_IN_FLIGHT || threadId >= threadCount_) {
         return nullptr;
     }
 
@@ -118,7 +110,7 @@ vk::CommandBuffer ThreadedCommandPool::allocatePrimary(uint32_t frameIndex, uint
 }
 
 vk::CommandBuffer ThreadedCommandPool::allocateSecondary(uint32_t frameIndex, uint32_t threadId) {
-    if (!initialized_ || frameIndex >= MAX_FRAMES_IN_FLIGHT || threadId >= threadCount_) {
+    if (pools_.empty() || frameIndex >= MAX_FRAMES_IN_FLIGHT || threadId >= threadCount_) {
         return nullptr;
     }
 
@@ -145,7 +137,7 @@ vk::CommandBuffer ThreadedCommandPool::allocateSecondary(uint32_t frameIndex, ui
 }
 
 vk::CommandPool ThreadedCommandPool::getPool(uint32_t frameIndex, uint32_t threadId) const {
-    if (!initialized_ || frameIndex >= MAX_FRAMES_IN_FLIGHT || threadId >= threadCount_) {
+    if (pools_.empty() || frameIndex >= MAX_FRAMES_IN_FLIGHT || threadId >= threadCount_) {
         return nullptr;
     }
     return *pools_[frameIndex][threadId].pool;

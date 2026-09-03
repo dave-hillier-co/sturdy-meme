@@ -7,8 +7,17 @@
 #include <SDL3/SDL.h>
 #include <vector>
 #include <memory>
+#include <optional>
 #include "PipelineCache.h"
 #include "VmaImage.h"
+
+// Owning handle for a VmaAllocator (destroyed with vmaDestroyAllocator).
+struct VmaAllocatorDeleter {
+    void operator()(VmaAllocator allocator) const noexcept {
+        if (allocator) vmaDestroyAllocator(allocator);
+    }
+};
+using UniqueVmaAllocator = std::unique_ptr<std::remove_pointer_t<VmaAllocator>, VmaAllocatorDeleter>;
 
 /**
  * VulkanContext encapsulates core Vulkan setup:
@@ -19,11 +28,15 @@
  * - Queue retrieval
  * - VMA allocator setup
  * - Swapchain management
+ *
+ * Construction is staged (initInstance() before the window exists, then
+ * initDevice()); teardown is the destructor, which waits for the device to go
+ * idle and then lets the members destroy in reverse declaration order.
  */
 class VulkanContext {
 public:
     VulkanContext() = default;
-    ~VulkanContext() = default;
+    ~VulkanContext();
 
     // Non-copyable
     VulkanContext(const VulkanContext&) = delete;
@@ -45,10 +58,8 @@ public:
      * Equivalent to initInstance() + initDevice(window).
      */
     bool init(SDL_Window* window);
-    void shutdown();
 
     bool createSwapchain();
-    void destroySwapchain();
     bool recreateSwapchain();
 
     // Clear all swapchain images to black (call after recreateSwapchain to prevent ghost frames)
@@ -56,12 +67,10 @@ public:
 
     // Swapchain-dependent resource creation (render pass, depth buffer, framebuffers)
     bool createSwapchainResources();
-    void destroySwapchainResources();
     bool recreateSwapchainResources();
 
     // Command pool and buffers
     bool createCommandPoolAndBuffers(uint32_t frameCount);
-    void destroyCommandPoolAndBuffers();
 
     void waitIdle();
 
@@ -71,22 +80,22 @@ public:
     const vk::raii::Device& getRaiiDevice() const { return *raiiDevice_; }
 
     // vulkan-hpp handle getters (implicit conversion to VkXxx when needed)
-    vk::Instance getVkInstance() const { return vk::Instance(instance); }
-    vk::PhysicalDevice getVkPhysicalDevice() const { return vk::PhysicalDevice(physicalDevice); }
-    vk::Device getVkDevice() const { return vk::Device(device); }
-    vk::Queue getVkGraphicsQueue() const { return vk::Queue(graphicsQueue); }
-    vk::Queue getVkPresentQueue() const { return vk::Queue(presentQueue); }
-    vk::Queue getVkTransferQueue() const { return vk::Queue(transferQueue_); }
-    vk::SwapchainKHR getVkSwapchain() const { return vk::SwapchainKHR(swapchain); }
-    vk::Format getVkSwapchainImageFormat() const { return static_cast<vk::Format>(swapchainImageFormat); }
-    vk::Extent2D getVkSwapchainExtent() const { return vk::Extent2D{swapchainExtent.width, swapchainExtent.height}; }
+    vk::Instance getVkInstance() const { return instance; }
+    vk::PhysicalDevice getVkPhysicalDevice() const { return physicalDevice; }
+    vk::Device getVkDevice() const { return device; }
+    vk::Queue getVkGraphicsQueue() const { return graphicsQueue; }
+    vk::Queue getVkPresentQueue() const { return presentQueue; }
+    vk::Queue getVkTransferQueue() const { return transferQueue_; }
+    vk::SwapchainKHR getVkSwapchain() const { return swapchain_ ? **swapchain_ : vk::SwapchainKHR{}; }
+    vk::Format getVkSwapchainImageFormat() const { return swapchainImageFormat; }
+    vk::Extent2D getVkSwapchainExtent() const { return swapchainExtent; }
 
     uint32_t getGraphicsQueueFamily() const;
     uint32_t getPresentQueueFamily() const;
     uint32_t getTransferQueueFamily() const;
     bool hasDedicatedTransferQueue() const { return hasDedicatedTransfer_; }
-    VmaAllocator getAllocator() const { return allocator; }
-    vk::PipelineCache getPipelineCache() const { return pipelineCache.getCache(); }
+    VmaAllocator getAllocator() const { return allocator_.get(); }
+    vk::PipelineCache getPipelineCache() const { return pipelineCache_ ? pipelineCache_->getCache() : vk::PipelineCache{}; }
     SDL_Window* getWindow() const { return window; }
 
     const std::vector<vk::ImageView>& getSwapchainImageViews() const { return swapchainImageViews; }
@@ -98,17 +107,17 @@ public:
     uint32_t getHeight() const { return swapchainExtent.height; }
 
     // Swapchain-dependent resource getters
-    vk::RenderPass getRenderPass() const { return renderPass_ ? **renderPass_ : VK_NULL_HANDLE; }
+    vk::RenderPass getRenderPass() const { return renderPass_ ? **renderPass_ : vk::RenderPass{}; }
     const vk::raii::RenderPass& getRaiiRenderPass() const { return *renderPass_; }
-    vk::ImageView getDepthImageView() const { return depthImageView_ ? **depthImageView_ : VK_NULL_HANDLE; }
-    vk::Sampler getDepthSampler() const { return depthSampler_ ? **depthSampler_ : VK_NULL_HANDLE; }
-    VkFormat getDepthFormat() const { return depthFormat_; }
+    vk::ImageView getDepthImageView() const { return depthImageView_ ? **depthImageView_ : vk::ImageView{}; }
+    vk::Sampler getDepthSampler() const { return depthSampler_ ? **depthSampler_ : vk::Sampler{}; }
+    vk::Format getDepthFormat() const { return depthFormat_; }
     const std::vector<vk::raii::Framebuffer>& getFramebuffers() const { return framebuffers_; }
     std::vector<vk::raii::Framebuffer>& getFramebuffers() { return framebuffers_; }
     uint32_t getFramebufferCount() const { return static_cast<uint32_t>(framebuffers_.size()); }
 
     // Command pool/buffer getters
-    vk::CommandPool getCommandPool() const { return commandPool_ ? **commandPool_ : VK_NULL_HANDLE; }
+    vk::CommandPool getCommandPool() const { return commandPool_ ? **commandPool_ : vk::CommandPool{}; }
     const vk::raii::CommandPool& getRaiiCommandPool() const { return *commandPool_; }
 
     /**
@@ -121,19 +130,19 @@ public:
     vk::CommandPool createWorkerCommandPool();
     const std::vector<vk::CommandBuffer>& getCommandBuffers() const { return commandBuffers_; }
     vk::CommandBuffer getCommandBuffer(uint32_t frameIndex) const {
-        return frameIndex < commandBuffers_.size() ? commandBuffers_[frameIndex] : VK_NULL_HANDLE;
+        return frameIndex < commandBuffers_.size() ? commandBuffers_[frameIndex] : vk::CommandBuffer{};
     }
 
     const vkb::Device& getVkbDevice() const { return vkbDevice; }
 
     // Check if validation layers are enabled (useful for diagnostics)
-    bool hasValidationLayers() const { return vkbInstance.debug_messenger != VK_NULL_HANDLE; }
+    bool hasValidationLayers() const { return debugMessenger_.has_value(); }
 
     // Check if instance phase is complete (for two-phase init)
     bool isInstanceReady() const { return instanceReady; }
 
     // Check if device phase is complete (device, surface, swapchain created)
-    bool isDeviceReady() const { return device != VK_NULL_HANDLE; }
+    bool isDeviceReady() const { return static_cast<bool>(device); }
 
     // Check if timeline semaphores are supported (always true for Vulkan 1.2+)
     bool hasTimelineSemaphores() const { return hasTimelineSemaphores_; }
@@ -156,26 +165,45 @@ private:
     bool createAllocator();
     bool createPipelineCache();
 
+    // Resize path: release the swapchain (and its image views) before
+    // createSwapchain() builds the replacement. Idempotent.
+    void destroySwapchain();
+
     // Internal helpers for swapchain resource creation
     bool createRenderPass();
     bool createDepthResources();
     bool createFramebuffers();
     bool recreateDepthResources();
 
+    // Members are declared in creation order; destruction runs in reverse:
+    // command pools -> framebuffers -> depth -> render pass -> swapchain views
+    // -> swapchain -> pipeline cache -> allocator -> device -> surface
+    // -> debug messenger -> instance.
+
     SDL_Window* window = nullptr;
     bool instanceReady = false;
 
+    // vk-bootstrap builder results: plain handle bundles, they own nothing.
     vkb::Instance vkbInstance;
     vkb::PhysicalDevice vkbPhysicalDevice;
     vkb::Device vkbDevice;
 
-    vk::Instance instance = VK_NULL_HANDLE;
-    vk::SurfaceKHR surface = VK_NULL_HANDLE;
-    vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    vk::Device device = VK_NULL_HANDLE;
-    vk::Queue graphicsQueue = VK_NULL_HANDLE;
-    vk::Queue presentQueue = VK_NULL_HANDLE;
-    vk::Queue transferQueue_ = VK_NULL_HANDLE;
+    // Owning vulkan-hpp RAII wrappers (adopt the handles vk-bootstrap created)
+    vk::raii::Context raiiContext_;
+    std::unique_ptr<vk::raii::Instance> raiiInstance_;
+    std::optional<vk::raii::DebugUtilsMessengerEXT> debugMessenger_;
+    std::optional<vk::raii::SurfaceKHR> surface_;
+    std::unique_ptr<vk::raii::PhysicalDevice> raiiPhysicalDevice_;
+    std::unique_ptr<vk::raii::Device> raiiDevice_;
+
+    // Non-owning cached copies of the handles above (plus queues)
+    vk::Instance instance{};
+    vk::SurfaceKHR surface{};
+    vk::PhysicalDevice physicalDevice{};
+    vk::Device device{};
+    vk::Queue graphicsQueue{};
+    vk::Queue presentQueue{};
+    vk::Queue transferQueue_{};
     uint32_t transferQueueFamily_ = 0;
     bool hasDedicatedTransfer_ = false;
     bool hasTimelineSemaphores_ = false;
@@ -184,28 +212,23 @@ private:
     bool hasDrawIndirectFirstInstance_ = false;
     bool hasFragmentStoresAndAtomics_ = false;
 
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    UniqueVmaAllocator allocator_;
 
-    PipelineCache pipelineCache;
+    std::optional<PipelineCache> pipelineCache_;
 
-    vk::SwapchainKHR swapchain = VK_NULL_HANDLE;
+    std::optional<vk::raii::SwapchainKHR> swapchain_;
     std::vector<vk::Image> swapchainImages;
-    std::vector<vk::ImageView> swapchainImageViews;
-    VkFormat swapchainImageFormat = VK_FORMAT_UNDEFINED;
-    VkExtent2D swapchainExtent = {0, 0};
-
-    // vulkan-hpp RAII wrappers (non-owning, wrapping existing handles)
-    vk::raii::Context raiiContext_;
-    std::unique_ptr<vk::raii::Instance> raiiInstance_;
-    std::unique_ptr<vk::raii::PhysicalDevice> raiiPhysicalDevice_;
-    std::unique_ptr<vk::raii::Device> raiiDevice_;
+    std::vector<vk::raii::ImageView> swapchainImageViewOwners_;
+    std::vector<vk::ImageView> swapchainImageViews;  // non-owning view of the owners above
+    vk::Format swapchainImageFormat = vk::Format::eUndefined;
+    vk::Extent2D swapchainExtent{0, 0};
 
     // Swapchain-dependent resources (render pass, depth buffer, framebuffers)
     std::optional<vk::raii::RenderPass> renderPass_;
     VmaImage depthImage_;
     std::optional<vk::raii::ImageView> depthImageView_;
     std::optional<vk::raii::Sampler> depthSampler_;
-    VkFormat depthFormat_ = VK_FORMAT_D32_SFLOAT;
+    vk::Format depthFormat_ = vk::Format::eD32Sfloat;
     std::vector<vk::raii::Framebuffer> framebuffers_;
 
     // Command pool and buffers

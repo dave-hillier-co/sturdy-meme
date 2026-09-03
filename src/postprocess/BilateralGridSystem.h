@@ -10,6 +10,7 @@
 #include <optional>
 #include "UBOs.h"
 #include "PerFrameBuffer.h"
+#include "PerFrameOwnedBuffers.h"
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "core/vulkan/VmaImage.h"
@@ -73,8 +74,8 @@ public:
                              vk::ImageView hdrInputView);
 
     // Get the blurred grid for sampling in post-process
-    vk::ImageView getGridView() const { return gridViews[0] ? **gridViews[0] : VK_NULL_HANDLE; }
-    vk::Sampler getGridSampler() const { return gridSampler_ ? **gridSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getGridView() const { return gridViews[0] ? **gridViews[0] : vk::ImageView{}; }
+    vk::Sampler getGridSampler() const { return gridSampler_ ? **gridSampler_ : vk::Sampler{}; }
 
     // Local tone mapping parameters
     void setEnabled(bool e) { enabled = e; }
@@ -97,7 +98,6 @@ public:
 
 private:
     bool initInternal(const InitInfo& info);
-    void cleanup();
 
     bool createGridTextures();
     bool createSampler();
@@ -107,18 +107,18 @@ private:
     bool createBuildPipeline();
     bool createBlurPipeline();
 
-    void destroyGridResources();
-
     // Clear grid before each frame
     void recordClearGrid(vk::CommandBuffer cmd);
 
-    vk::Device device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    // Non-owning device/context handles. raiiDevice_ must outlive every
+    // vk::raii member below (VulkanContext guarantees this).
+    const vk::raii::Device* raiiDevice_ = nullptr;
+    vk::Device device{};
+    VmaAllocator allocator = nullptr;
     DescriptorManager::Pool* descriptorPool = nullptr;
     VkExtent2D extent = {0, 0};
     std::string shaderPath;
     uint32_t framesInFlight = 0;
-    const vk::raii::Device* raiiDevice_ = nullptr;
 
     // Format for bilateral grid (stores weighted log-lum + weight)
     static constexpr VkFormat GRID_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -143,9 +143,9 @@ private:
     std::vector<vk::DescriptorSet> blurDescriptorSetsY;  // Y-axis blur
     std::vector<vk::DescriptorSet> blurDescriptorSetsZ;  // Z-axis blur
 
-    // Uniform buffers
-    BufferUtils::PerFrameBufferSet buildUniformBuffers;
-    BufferUtils::PerFrameBufferSet blurUniformBuffers;
+    // Uniform buffers (per frame, RAII)
+    PerFrameOwnedBuffers buildUniformBuffers;
+    PerFrameOwnedBuffers blurUniformBuffers;
 
     // Parameters
     bool enabled = true;

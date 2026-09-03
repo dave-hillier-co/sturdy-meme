@@ -59,8 +59,6 @@ public:
     bool hasTiledPipeline() const { return tiledPipeline_.has_value(); }
     vk::Pipeline getTiledPipeline() const { return **tiledPipeline_; }
 
-    void cleanup() { tiledPipeline_.reset(); }
-
 private:
     std::vector<vk::DescriptorSet> descriptorSets_;
     std::optional<vk::raii::Pipeline> tiledPipeline_;

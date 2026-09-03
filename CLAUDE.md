@@ -45,6 +45,8 @@ The thread that presents (renders the loading screen during startup, frames afte
 
 Audit with `./scripts/analyze-main-thread-stalls.sh` (static scan; `--strict` exits nonzero on violations). At runtime, `InitProfiler` logs a warning when a main-thread init phase exceeds the budget.
 
+- RAII ratchet: `./scripts/analyze-raii.sh` counts public `init`/`initialize`/`cleanup`/`destroy`/`shutdown` methods and raw Vulkan/VMA handle members per header under `src/`; `--check` (run in CI) fails if either total exceeds `scripts/raii-baseline.txt`. The baseline must only go down: when a change lowers a count, run `./scripts/analyze-raii.sh --update` and commit the new baseline in the same commit.
+
 ## Preprocessing Tool Output Formats
 
 Preprocessing tools in `tools/` must use standard, widely-supported file formats. Do NOT use custom binary formats (`.dat`, `.bin`). Preferred formats:

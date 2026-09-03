@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vector>
+#include <memory>
 #include <mutex>
 
 class VulkanContext;
@@ -18,8 +19,10 @@ class VulkanContext;
  * without synchronization, because each thread has its own pool.
  *
  * Usage:
+ *   auto pool = ThreadedCommandPool::create(context, threadCount);
+ *
  *   // At frame start
- *   pool.resetFrame(currentFrame);
+ *   pool->resetFrame(currentFrame);
  *
  *   // In parallel recording tasks
  *   int threadId = TaskScheduler::instance().getCurrentThreadId();
@@ -33,24 +36,22 @@ class ThreadedCommandPool {
 public:
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
 
-    ThreadedCommandPool() = default;
-    ~ThreadedCommandPool() = default;
+    // Passkey for controlled construction via make_unique
+    struct ConstructToken { explicit ConstructToken() = default; };
+    ThreadedCommandPool(ConstructToken, VulkanContext& context, uint32_t threadCount);
+    ~ThreadedCommandPool() = default;  // pools_ (vk::raii::CommandPool) release themselves
 
     // Non-copyable
     ThreadedCommandPool(const ThreadedCommandPool&) = delete;
     ThreadedCommandPool& operator=(const ThreadedCommandPool&) = delete;
 
     /**
-     * Initialize command pools.
-     * @param context Vulkan context
+     * Create the command pools.
+     * @param context Vulkan context (must outlive the pool manager)
      * @param threadCount Number of worker threads (from TaskScheduler)
+     * @return nullptr on failure (any pools created so far are released)
      */
-    bool initialize(VulkanContext& context, uint32_t threadCount);
-
-    /**
-     * Shutdown and release all pools.
-     */
-    void shutdown();
+    static std::unique_ptr<ThreadedCommandPool> create(VulkanContext& context, uint32_t threadCount);
 
     /**
      * Reset all pools for a given frame.
@@ -88,9 +89,9 @@ public:
     uint32_t getThreadCount() const { return threadCount_; }
 
     /**
-     * Check if initialized.
+     * Check if the pools exist (false only when create() failed part-way).
      */
-    bool isInitialized() const { return initialized_; }
+    bool isInitialized() const { return !pools_.empty(); }
 
 private:
     struct PerThreadPool {
@@ -109,7 +110,6 @@ private:
     vk::Device device_;
     uint32_t graphicsQueueFamily_ = 0;
     uint32_t threadCount_ = 0;
-    bool initialized_ = false;
 
     // Mutex for allocation (rarely contended since each thread uses its own pool)
     mutable std::mutex allocationMutex_;

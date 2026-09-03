@@ -37,30 +37,30 @@ public:
         vk::Sampler snowMaskSampler;
 
         // Optional: cloud shadow (may be added after initial creation)
-        vk::ImageView cloudShadowView = VK_NULL_HANDLE;
-        vk::Sampler cloudShadowSampler = VK_NULL_HANDLE;
+        vk::ImageView cloudShadowView{};
+        vk::Sampler cloudShadowSampler{};
 
         // Snow and cloud shadow UBOs (binding 10 and 11)
-        vk::Buffer snowUboBuffer = VK_NULL_HANDLE;
+        vk::Buffer snowUboBuffer{};
         vk::DeviceSize snowUboBufferSize = 0;
-        vk::Buffer cloudShadowUboBuffer = VK_NULL_HANDLE;
+        vk::Buffer cloudShadowUboBuffer{};
         vk::DeviceSize cloudShadowUboBufferSize = 0;
 
         // Optional: bone matrices for skinned meshes
-        vk::Buffer boneMatricesBuffer = VK_NULL_HANDLE;
+        vk::Buffer boneMatricesBuffer{};
         vk::DeviceSize boneMatricesBufferSize = 0;
 
         // Placeholder texture for unused PBR bindings (bindings 13-16 must always be written)
-        vk::ImageView placeholderTextureView = VK_NULL_HANDLE;
-        vk::Sampler placeholderTextureSampler = VK_NULL_HANDLE;
+        vk::ImageView placeholderTextureView{};
+        vk::Sampler placeholderTextureSampler{};
 
         // Wind UBO for vegetation animation (binding 17)
-        vk::Buffer windBuffer = VK_NULL_HANDLE;
+        vk::Buffer windBuffer{};
         vk::DeviceSize windBufferSize = 0;
 
         // Screen-space shadow buffer (binding 21, optional)
-        vk::ImageView screenShadowView = VK_NULL_HANDLE;
-        vk::Sampler screenShadowSampler = VK_NULL_HANDLE;
+        vk::ImageView screenShadowView{};
+        vk::Sampler screenShadowSampler{};
     };
 
     // Per-material texture bindings
@@ -71,15 +71,15 @@ public:
         vk::Sampler normalSampler;
 
         // Optional PBR textures (for Substance/PBR materials)
-        // Set to VK_NULL_HANDLE if not used - shader will use push constant values
-        vk::ImageView roughnessView = VK_NULL_HANDLE;
-        vk::Sampler roughnessSampler = VK_NULL_HANDLE;
-        vk::ImageView metallicView = VK_NULL_HANDLE;
-        vk::Sampler metallicSampler = VK_NULL_HANDLE;
-        vk::ImageView aoView = VK_NULL_HANDLE;
-        vk::Sampler aoSampler = VK_NULL_HANDLE;
-        vk::ImageView heightView = VK_NULL_HANDLE;
-        vk::Sampler heightSampler = VK_NULL_HANDLE;
+        // Leave default (null) if not used - shader will use push constant values
+        vk::ImageView roughnessView{};
+        vk::Sampler roughnessSampler{};
+        vk::ImageView metallicView{};
+        vk::Sampler metallicSampler{};
+        vk::ImageView aoView{};
+        vk::Sampler aoSampler{};
+        vk::ImageView heightView{};
+        vk::Sampler heightSampler{};
     };
 
     explicit MaterialDescriptorFactory(vk::Device device);

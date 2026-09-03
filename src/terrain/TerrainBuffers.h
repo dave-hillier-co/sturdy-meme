@@ -2,10 +2,10 @@
 
 #include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
-#include "SingleBuffer.h"
-#include "PerFrameBuffer.h"
+#include "core/vulkan/VmaBuffer.h"
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 class TerrainBuffers {
 public:
@@ -14,81 +14,89 @@ public:
     explicit TerrainBuffers(ConstructToken) {}
 
     struct InitInfo {
-        VmaAllocator allocator;
-        uint32_t framesInFlight;
-        uint32_t maxVisibleTriangles;
+        VmaAllocator allocator = nullptr;
+        uint32_t framesInFlight = 0;
+        uint32_t maxVisibleTriangles = 0;
     };
 
     // Factory method - returns nullptr on failure
     static std::unique_ptr<TerrainBuffers> create(const InitInfo& info);
 
+    // All buffers are ManagedBuffer (RAII): mapped buffers are unmapped and every
+    // allocation is freed by member destruction.
+    ~TerrainBuffers() = default;
 
-    ~TerrainBuffers();
-
-    // Move-only
-    TerrainBuffers(TerrainBuffers&& other) noexcept;
-    TerrainBuffers& operator=(TerrainBuffers&& other) noexcept;
+    // Non-copyable, non-movable (only ever held by unique_ptr)
     TerrainBuffers(const TerrainBuffers&) = delete;
     TerrainBuffers& operator=(const TerrainBuffers&) = delete;
+    TerrainBuffers(TerrainBuffers&&) = delete;
+    TerrainBuffers& operator=(TerrainBuffers&&) = delete;
 
     // Uniform buffer accessors
-    vk::Buffer getUniformBuffer(uint32_t frameIndex) const { return uniformBuffers.buffers[frameIndex]; }
-    void* getUniformMappedPtr(uint32_t frameIndex) const { return uniformBuffers.mappedPointers[frameIndex]; }
+    vk::Buffer getUniformBuffer(uint32_t frameIndex) const { return uniformBuffers.buffers[frameIndex].get(); }
+    void* getUniformMappedPtr(uint32_t frameIndex) const { return uniformBuffers.mapped[frameIndex]; }
 
     // Indirect buffer accessors
-    vk::Buffer getIndirectDispatchBuffer() const { return indirectDispatch.buffer; }
-    vk::Buffer getIndirectDrawBuffer() const { return indirectDraw.buffer; }
-    void* getIndirectDrawMappedPtr() const { return indirectDraw.mappedPointer; }
+    vk::Buffer getIndirectDispatchBuffer() const { return indirectDispatch.get(); }
+    vk::Buffer getIndirectDrawBuffer() const { return indirectDraw.get(); }
+    void* getIndirectDrawMappedPtr() const { return indirectDrawMapped; }
 
     // Visibility buffer accessors (stream compaction)
-    vk::Buffer getVisibleIndicesBuffer() const { return visibleIndices.buffer; }
-    vk::Buffer getCullIndirectDispatchBuffer() const { return cullIndirectDispatch.buffer; }
+    vk::Buffer getVisibleIndicesBuffer() const { return visibleIndices.get(); }
+    vk::Buffer getCullIndirectDispatchBuffer() const { return cullIndirectDispatch.get(); }
 
     // Shadow buffer accessors
-    vk::Buffer getShadowVisibleBuffer() const { return shadowVisible.buffer; }
-    vk::Buffer getShadowIndirectDrawBuffer() const { return shadowIndirectDraw.buffer; }
+    vk::Buffer getShadowVisibleBuffer() const { return shadowVisible.get(); }
+    vk::Buffer getShadowIndirectDrawBuffer() const { return shadowIndirectDraw.get(); }
 
     // Caustics UBO accessors
-    vk::Buffer getCausticsUniformBuffer(uint32_t frameIndex) const { return causticsUniforms.buffers[frameIndex]; }
-    void* getCausticsMappedPtr(uint32_t frameIndex) const { return causticsUniforms.mappedPointers[frameIndex]; }
+    vk::Buffer getCausticsUniformBuffer(uint32_t frameIndex) const { return causticsUniforms.buffers[frameIndex].get(); }
+    void* getCausticsMappedPtr(uint32_t frameIndex) const { return causticsUniforms.mapped[frameIndex]; }
 
     // Liquid UBO accessors (composable material system - puddles, wet surfaces)
-    vk::Buffer getLiquidUniformBuffer(uint32_t frameIndex) const { return liquidUniforms.buffers[frameIndex]; }
-    void* getLiquidMappedPtr(uint32_t frameIndex) const { return liquidUniforms.mappedPointers[frameIndex]; }
+    vk::Buffer getLiquidUniformBuffer(uint32_t frameIndex) const { return liquidUniforms.buffers[frameIndex].get(); }
+    void* getLiquidMappedPtr(uint32_t frameIndex) const { return liquidUniforms.mapped[frameIndex]; }
 
     // Material Layer UBO accessors (composable material system - layer blending)
-    vk::Buffer getMaterialLayerUniformBuffer(uint32_t frameIndex) const { return materialLayerUniforms.buffers[frameIndex]; }
-    void* getMaterialLayerMappedPtr(uint32_t frameIndex) const { return materialLayerUniforms.mappedPointers[frameIndex]; }
+    vk::Buffer getMaterialLayerUniformBuffer(uint32_t frameIndex) const { return materialLayerUniforms.buffers[frameIndex].get(); }
+    void* getMaterialLayerMappedPtr(uint32_t frameIndex) const { return materialLayerUniforms.mapped[frameIndex]; }
 
 private:
+    // One host-visible, persistently mapped uniform buffer per frame in flight.
+    struct PerFrameUniforms {
+        std::vector<ManagedBuffer> buffers;
+        std::vector<void*> mapped;
+    };
+
     bool initInternal(const InitInfo& info);
     bool createUniformBuffers(const InitInfo& info);
     bool createIndirectBuffers(const InitInfo& info);
 
-    // Stored for cleanup
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
+    static bool createPerFrameUniforms(VmaAllocator allocator, uint32_t frameCount,
+                                       vk::DeviceSize size, PerFrameUniforms& out);
 
     // Per-frame uniform buffers
-    BufferUtils::PerFrameBufferSet uniformBuffers;
+    PerFrameUniforms uniformBuffers;
 
     // Indirect dispatch/draw buffers
-    BufferUtils::SingleBuffer indirectDispatch;
-    BufferUtils::SingleBuffer indirectDraw;
+    ManagedBuffer indirectDispatch;
+    ManagedBuffer indirectDraw;
+    void* indirectDrawMapped = nullptr;
 
     // Stream compaction buffers
-    BufferUtils::SingleBuffer visibleIndices;
-    BufferUtils::SingleBuffer cullIndirectDispatch;
+    ManagedBuffer visibleIndices;
+    ManagedBuffer cullIndirectDispatch;
 
     // Shadow culling buffers
-    BufferUtils::SingleBuffer shadowVisible;
-    BufferUtils::SingleBuffer shadowIndirectDraw;
+    ManagedBuffer shadowVisible;
+    ManagedBuffer shadowIndirectDraw;
 
     // Caustics uniform buffers (per-frame for underwater caustics)
-    BufferUtils::PerFrameBufferSet causticsUniforms;
+    PerFrameUniforms causticsUniforms;
 
     // Liquid uniform buffers (composable material system - puddles, wetness)
-    BufferUtils::PerFrameBufferSet liquidUniforms;
+    PerFrameUniforms liquidUniforms;
 
     // Material layer uniform buffers (composable material system - layer blending)
-    BufferUtils::PerFrameBufferSet materialLayerUniforms;
+    PerFrameUniforms materialLayerUniforms;
 };

@@ -15,7 +15,21 @@ std::unique_ptr<LoadingRenderer> LoadingRenderer::create(const InitInfo& info) {
 }
 
 LoadingRenderer::~LoadingRenderer() {
-    cleanup();
+    // abandon() leaves ctx_ empty: the device is already gone and every raii
+    // handle has been detached, so there is nothing to wait for or destroy.
+    if (!ctx_) return;
+
+    // Wait for GPU to finish. Other threads submit under GraphicsQueueLock, and
+    // a device-wide wait requires every queue to be externally synchronized.
+    {
+        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
+        ctx_->get().getVkDevice().waitIdle();
+    }
+
+    // Members destroy in reverse declaration order: fence and semaphores,
+    // command pool (frees its command buffers), pipeline, layout,
+    // framebuffers, render pass.
+    SDL_Log("LoadingRenderer cleaned up");
 }
 
 bool LoadingRenderer::init(const InitInfo& info) {
@@ -37,14 +51,13 @@ bool LoadingRenderer::init(const InitInfo& info) {
     auto duration = now.time_since_epoch();
     startTime_ = std::chrono::duration<float>(duration).count();
 
-    initialized_ = true;
     SDL_Log("LoadingRenderer initialized");
     return true;
 }
 
 bool LoadingRenderer::createRenderPass() {
     const auto& device = ctx_->get().getRaiiDevice();
-    vk::Format swapchainFormat = static_cast<vk::Format>(ctx_->get().getVkSwapchainImageFormat());
+    vk::Format swapchainFormat = ctx_->get().getVkSwapchainImageFormat();
 
     // Single color attachment, no depth - for presentation
     if (!RenderPassBuilder()
@@ -59,17 +72,16 @@ bool LoadingRenderer::createRenderPass() {
 bool LoadingRenderer::createFramebuffers() {
     const auto& device = ctx_->get().getRaiiDevice();
     const auto& imageViews = ctx_->get().getSwapchainImageViews();
-    VkExtent2D extent = ctx_->get().getVkSwapchainExtent();
+    vk::Extent2D extent = ctx_->get().getVkSwapchainExtent();
 
     framebuffers_.clear();
     framebuffers_.reserve(imageViews.size());
 
     try {
         for (size_t i = 0; i < imageViews.size(); i++) {
-            vk::ImageView vkImageView(imageViews[i]);
             auto framebufferInfo = vk::FramebufferCreateInfo{}
                 .setRenderPass(**renderPass_)
-                .setAttachments(vkImageView)
+                .setAttachments(imageViews[i])
                 .setWidth(extent.width)
                 .setHeight(extent.height)
                 .setLayers(1);
@@ -85,35 +97,28 @@ bool LoadingRenderer::createFramebuffers() {
 
 bool LoadingRenderer::createPipeline() {
     const auto& device = ctx_->get().getRaiiDevice();
-    vk::Device rawDevice = ctx_->get().getVkDevice();
 
-    // Load shaders
+    // Load shaders (raii modules: only needed until pipeline creation)
     std::string vertPath = shaderPath_ + "/loading.vert.spv";
     std::string fragPath = shaderPath_ + "/loading.frag.spv";
 
-    auto vertModule = ShaderLoader::loadShaderModule(rawDevice, vertPath);
-    auto fragModule = ShaderLoader::loadShaderModule(rawDevice, fragPath);
+    auto vertModule = ShaderLoader::loadShaderModule(device, vertPath);
+    auto fragModule = ShaderLoader::loadShaderModule(device, fragPath);
 
     if (!vertModule || !fragModule) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to load shaders");
         return false;
     }
 
-    // ShaderLoader returns raw vk::ShaderModule, clean up when done
-    auto cleanupShaders = [&]() {
-        vkDestroyShaderModule(rawDevice, *vertModule, nullptr);
-        vkDestroyShaderModule(rawDevice, *fragModule, nullptr);
-    };
-
     // Shader stages
     std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages = {
         vk::PipelineShaderStageCreateInfo{}
             .setStage(vk::ShaderStageFlagBits::eVertex)
-            .setModule(*vertModule)
+            .setModule(**vertModule)
             .setPName("main"),
         vk::PipelineShaderStageCreateInfo{}
             .setStage(vk::ShaderStageFlagBits::eFragment)
-            .setModule(*fragModule)
+            .setModule(**fragModule)
             .setPName("main")
     };
 
@@ -178,7 +183,6 @@ bool LoadingRenderer::createPipeline() {
         pipelineLayout_.emplace(device, pipelineLayoutInfo);
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create pipeline layout: %s", e.what());
-        cleanupShaders();
         return false;
     }
 
@@ -200,11 +204,9 @@ bool LoadingRenderer::createPipeline() {
         // Use nullptr for pipeline cache (loading screen doesn't benefit from caching)
         auto result = device.createGraphicsPipelines(nullptr, pipelineInfo);
         pipeline_.emplace(std::move(result.front()));
-        cleanupShaders();
         return true;
     } catch (const vk::SystemError& e) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to create pipeline: %s", e.what());
-        cleanupShaders();
         return false;
     }
 }
@@ -224,18 +226,17 @@ bool LoadingRenderer::createCommandPool() {
         return false;
     }
 
-    // Allocate command buffers (one per swapchain image)
+    // Allocate command buffers (one per swapchain image); they are freed with the pool
     uint32_t imageCount = ctx_->get().getSwapchainImageCount();
-    commandBuffers_.resize(imageCount);
+    auto allocInfo = vk::CommandBufferAllocateInfo{}
+        .setCommandPool(**commandPool_)
+        .setLevel(vk::CommandBufferLevel::ePrimary)
+        .setCommandBufferCount(imageCount);
 
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = **commandPool_;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = imageCount;
-
-    if (vkAllocateCommandBuffers(ctx_->get().getVkDevice(), &allocInfo, reinterpret_cast<VkCommandBuffer*>(commandBuffers_.data())) != VK_SUCCESS) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to allocate command buffers");
+    try {
+        commandBuffers_ = ctx_->get().getVkDevice().allocateCommandBuffers(allocInfo);
+    } catch (const vk::SystemError& e) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "LoadingRenderer: Failed to allocate command buffers: %s", e.what());
         return false;
     }
 
@@ -261,11 +262,11 @@ bool LoadingRenderer::createSyncObjects() {
 }
 
 bool LoadingRenderer::render() {
-    if (!initialized_) return false;
+    if (!ctx_) return false;
 
     const auto& device = ctx_->get().getRaiiDevice();
     vk::Device rawDevice = ctx_->get().getVkDevice();
-    VkExtent2D extent = ctx_->get().getVkSwapchainExtent();
+    vk::Extent2D extent = ctx_->get().getVkSwapchainExtent();
 
     // Skip if window is minimized
     if (extent.width == 0 || extent.height == 0) {
@@ -415,42 +416,8 @@ bool LoadingRenderer::render() {
     return true;
 }
 
-void LoadingRenderer::cleanup() {
-    if (!initialized_) return;
-
-    vk::Device device = ctx_->get().getVkDevice();
-
-    // Wait for GPU to finish. Other threads submit under GraphicsQueueLock, and
-    // a device-wide wait requires every queue to be externally synchronized.
-    {
-        GraphicsQueueLock::Guard lock(GraphicsQueueLock::mutex());
-        device.waitIdle();
-    }
-
-    // Free command buffers before destroying pool
-    if (!commandBuffers_.empty() && commandPool_) {
-        vkFreeCommandBuffers(device, **commandPool_,
-                             static_cast<uint32_t>(commandBuffers_.size()),
-                             reinterpret_cast<VkCommandBuffer*>(commandBuffers_.data()));
-        commandBuffers_.clear();
-    }
-
-    // RAII handles cleanup of other resources via destructors (reset optional values)
-    inFlightFence_.reset();
-    renderFinishedSemaphore_.reset();
-    imageAvailableSemaphore_.reset();
-    commandPool_.reset();
-    pipeline_.reset();
-    pipelineLayout_.reset();
-    framebuffers_.clear();
-    renderPass_.reset();
-
-    initialized_ = false;
-    SDL_Log("LoadingRenderer cleaned up");
-}
-
 void LoadingRenderer::abandon() {
-    if (!initialized_) return;
+    if (!ctx_) return;
 
     // The raii handles would call vkDestroy* on the dead device from their
     // destructors; release() detaches the handle so they do not.
@@ -474,7 +441,6 @@ void LoadingRenderer::abandon() {
     drop(renderPass_);
 
     ctx_.reset();
-    initialized_ = false;
     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                 "LoadingRenderer abandoned: its VulkanContext was destroyed before cleanup");
 }

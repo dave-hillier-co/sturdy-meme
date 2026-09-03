@@ -71,7 +71,8 @@ public:
      */
     static std::unique_ptr<ThreadedTreeGenerator> create(uint32_t workerCount = 4);
 
-
+    // Stops and joins the workers (LoadJobQueue::shutdown is idempotent and its
+    // destructor would do the same; the explicit call makes the join visible).
     ~ThreadedTreeGenerator();
 
     // Non-copyable, non-movable
@@ -132,8 +133,6 @@ public:
     uint32_t getCompletedCount() const { return completedCount_.load(); }
 
 private:
-    bool init(uint32_t workerCount);
-
     // Move held requests onto the job queue while under the staged-tree cap
     void submitHeldRequests();
 

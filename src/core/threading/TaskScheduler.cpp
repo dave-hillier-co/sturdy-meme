@@ -45,7 +45,14 @@ void TaskScheduler::shutdown() {
         return;
     }
 
-    running_.store(false);
+    // Flip the flag under both queue mutexes so a worker cannot observe
+    // running_ == true in its wait predicate and then block after the
+    // notification has already gone out (lost-wakeup race).
+    {
+        std::lock_guard<std::mutex> queueLock(queueMutex_);
+        std::lock_guard<std::mutex> ioLock(ioMutex_);
+        running_.store(false);
+    }
 
     // Wake up all waiting threads
     queueCondition_.notify_all();

@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstdint>
 #include <vector>
+#include "vulkan/VmaBuffer.h"
 
 namespace BufferUtils {
 
@@ -54,22 +55,23 @@ namespace BufferUtils {
 class FrameIndexedBuffers {
 public:
     FrameIndexedBuffers() = default;
-    ~FrameIndexedBuffers();
+    ~FrameIndexedBuffers() = default;  // each VmaBuffer frees itself
 
     // Non-copyable (contains Vulkan resources)
     FrameIndexedBuffers(const FrameIndexedBuffers&) = delete;
     FrameIndexedBuffers& operator=(const FrameIndexedBuffers&) = delete;
 
     // Movable
-    FrameIndexedBuffers(FrameIndexedBuffers&& other) noexcept;
-    FrameIndexedBuffers& operator=(FrameIndexedBuffers&& other) noexcept;
+    FrameIndexedBuffers(FrameIndexedBuffers&& other) noexcept = default;
+    FrameIndexedBuffers& operator=(FrameIndexedBuffers&& other) noexcept = default;
 
-    // Allocate buffers for each frame
+    // Allocate buffers for each frame (any previous buffers are released first)
     bool resize(VmaAllocator allocator, uint32_t frameCount, vk::DeviceSize size,
                 vk::BufferUsageFlags usage,
                 VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_GPU_ONLY);
 
-    // Clean up all buffers
+    // Release all buffers now. Not required for cleanup (the destructor and
+    // resize() do this); kept for callers that drop GPU data early.
     void destroy();
 
     // =========================================================================
@@ -92,18 +94,12 @@ public:
     // For descriptor set initialization where you need to bind all frames
     vk::Buffer operator[](uint32_t index) const {
         assert(index < frameCount_ && "Index out of bounds");
-        return buffers_[index];
+        return vk::Buffer(buffers_[index].get());
     }
 
-    // Direct iteration for cleanup/initialization
-    auto begin() const { return buffers_.begin(); }
-    auto end() const { return buffers_.end(); }
-
 private:
-    std::vector<vk::Buffer> buffers_;
-    std::vector<VmaAllocation> allocations_;
+    std::vector<VmaBuffer> buffers_;  // owning: buffer + allocation per frame
     uint32_t frameCount_ = 0;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
 };
 
 }  // namespace BufferUtils

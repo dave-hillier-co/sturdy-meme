@@ -16,10 +16,6 @@ std::unique_ptr<LeafSystem> LeafSystem::create(const InitInfo& info) {
     return system;
 }
 
-LeafSystem::~LeafSystem() {
-    cleanup();
-}
-
 bool LeafSystem::initInternal(const InitInfo& info) {
     // Store init info for accessors used during initialization
     storedDevice = info.device;
@@ -48,24 +44,11 @@ bool LeafSystem::initInternal(const InitInfo& info) {
         return createGraphicsPipeline(initializingPS->getGraphicsPipelineHandles());
     };
     hooks.createDescriptorSets = [this]() { return createDescriptorSets(); };
-    hooks.destroyBuffers = [this](VmaAllocator allocator) { destroyBuffers(allocator); };
+    hooks.destroyBuffers = [](VmaAllocator) {};  // buffers are RAII members; hook must be non-null
 
     particleSystem = ParticleSystem::create(info, hooks, info.framesInFlight, &initializingPS);
 
     return particleSystem != nullptr;
-}
-
-void LeafSystem::cleanup() {
-    particleSystem.reset();
-}
-
-void LeafSystem::destroyBuffers(VmaAllocator alloc) {
-    BufferUtils::destroyBuffers(alloc, particleBuffers);
-    BufferUtils::destroyBuffers(alloc, indirectBuffers);
-    BufferUtils::destroyBuffers(alloc, uniformBuffers);
-    BufferUtils::destroyBuffers(alloc, paramsBuffers);
-
-    BufferUtils::destroyBuffers(alloc, displacementRegionBuffers);
 }
 
 bool LeafSystem::createBuffers() {
@@ -76,43 +59,42 @@ bool LeafSystem::createBuffers() {
 
     // Use framesInFlight for buffer set count to ensure proper triple buffering
     uint32_t bufferSetCount = getFramesInFlight();
-    const auto doubleBufferedConfig = BufferUtils::DoubleBufferedBufferConfig(getAllocator(), bufferSetCount);
     const auto perFrameConfig = BufferUtils::PerFrameBufferConfig(getAllocator(), getFramesInFlight());
 
-    if (!BufferUtils::DoubleBufferedBufferBuilder::fromConfig(doubleBufferedConfig)
-             .withSize(particleBufferSize)
-             .withUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-             .build(particleBuffers)) {
+    // GPU-only sets, one per buffer set (matches the former DoubleBufferedBufferSet: AUTO memory usage)
+    if (!particleBuffers.resize(getAllocator(), bufferSetCount, particleBufferSize,
+                                vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer,
+                                VMA_MEMORY_USAGE_AUTO)) {
         SDL_Log("Failed to create leaf particle buffers");
         return false;
     }
 
-    if (!BufferUtils::DoubleBufferedBufferBuilder::fromConfig(doubleBufferedConfig)
-             .withSize(indirectBufferSize)
-             .withUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
-             .build(indirectBuffers)) {
+    if (!indirectBuffers.resize(getAllocator(), bufferSetCount, indirectBufferSize,
+                                vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer |
+                                vk::BufferUsageFlagBits::eTransferDst,
+                                VMA_MEMORY_USAGE_AUTO)) {
         SDL_Log("Failed to create leaf indirect buffers");
         return false;
     }
 
-    if (!BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig)
-             .withSize(cullingUniformSize)
-             .build(uniformBuffers)) {
+    if (!BufferUtils::MappedFrameBuffers::build(getAllocator(),
+             BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig).withSize(cullingUniformSize),
+             uniformBuffers)) {
         SDL_Log("Failed to create leaf culling uniform buffers");
         return false;
     }
 
-    if (!BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig)
-             .withSize(leafPhysicsParamsSize)
-             .build(paramsBuffers)) {
+    if (!BufferUtils::MappedFrameBuffers::build(getAllocator(),
+             BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig).withSize(leafPhysicsParamsSize),
+             paramsBuffers)) {
         SDL_Log("Failed to create leaf physics params buffers");
         return false;
     }
 
     // Create displacement region uniform buffers (per-frame)
-    if (!BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig)
-            .withSize(sizeof(glm::vec4))  // regionCenterAndSize
-            .build(displacementRegionBuffers)) {
+    if (!BufferUtils::MappedFrameBuffers::build(getAllocator(),
+             BufferUtils::PerFrameBufferBuilder::fromConfig(perFrameConfig).withSize(sizeof(glm::vec4)),  // regionCenterAndSize
+             displacementRegionBuffers)) {
         SDL_Log("Failed to create leaf displacement region buffers");
         return false;
     }
@@ -405,15 +387,15 @@ void LeafSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buff
 
         // Compute descriptor set - use non-fluent pattern to avoid copy semantics bug
         DescriptorManager::SetWriter computeWriter(dev, particleSystem->getComputeDescriptorSet(set));
-        computeWriter.writeBuffer(0, particleBuffers.buffers[inputSet], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        computeWriter.writeBuffer(1, particleBuffers.buffers[outputSet], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        computeWriter.writeBuffer(2, indirectBuffers.buffers[outputSet], 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-        computeWriter.writeBuffer(3, uniformBuffers.buffers[0], 0, sizeof(CullingUniforms));
+        computeWriter.writeBuffer(0, particleBuffers.get(inputSet), 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        computeWriter.writeBuffer(1, particleBuffers.get(outputSet), 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        computeWriter.writeBuffer(2, indirectBuffers.get(outputSet), 0, sizeof(VkDrawIndirectCommand), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        computeWriter.writeBuffer(3, uniformBuffers.get(0), 0, sizeof(CullingUniforms));
         computeWriter.writeBuffer(4, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
         computeWriter.writeImage(5, terrainHeightMapView, terrainHeightMapSampler);
         computeWriter.writeImage(6, displacementMapViewParam, displacementMapSamplerParam);
-        computeWriter.writeBuffer(7, displacementRegionBuffers.buffers[0], 0, sizeof(glm::vec4));
-        computeWriter.writeBuffer(10, paramsBuffers.buffers[0], 0, sizeof(LeafPhysicsParams));
+        computeWriter.writeBuffer(7, displacementRegionBuffers.get(0), 0, sizeof(glm::vec4));
+        computeWriter.writeBuffer(10, paramsBuffers.get(0), 0, sizeof(LeafPhysicsParams));
 
         // Tile cache bindings (8 and 9) - for high-res terrain sampling
         if (tileArrayView != VK_NULL_HANDLE && tileSampler != VK_NULL_HANDLE) {
@@ -436,7 +418,7 @@ void LeafSystem::updateDescriptorSets(vk::Device dev, const std::vector<vk::Buff
             graphicsWriter.writeBuffer(0, rendererUniformBuffers[0], 0, 320,
                                        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC);  // sizeof(UniformBufferObject)
         }
-        graphicsWriter.writeBuffer(1, particleBuffers.buffers[set], 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        graphicsWriter.writeBuffer(1, particleBuffers.get(set), 0, sizeof(LeafParticle) * MAX_PARTICLES, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
         graphicsWriter.writeBuffer(2, windBuffers[0], 0, 32);  // sizeof(WindUniforms)
         graphicsWriter.update();
     }
@@ -457,7 +439,7 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
     culling.lodTransitionStart = 40.0f;
     culling.lodTransitionEnd = 60.0f;
     culling.maxLodDropRate = 0.5f;
-    memcpy(uniformBuffers.mappedPointers[frameIndex], &culling, sizeof(CullingUniforms));
+    memcpy(uniformBuffers.mapped(frameIndex), &culling, sizeof(CullingUniforms));
 
     // Fill LeafPhysicsParams (leaf-specific physics parameters)
     LeafPhysicsParams params{};
@@ -494,7 +476,7 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
     params.terrainSize = terrainSize;
     params.terrainHeightScale = terrainHeightScale;
 
-    memcpy(paramsBuffers.mappedPointers[frameIndex], &params, sizeof(LeafPhysicsParams));
+    memcpy(paramsBuffers.mapped(frameIndex), &params, sizeof(LeafPhysicsParams));
 
     // Update displacement region to follow camera (same as grass system)
     displacementRegionCenter = glm::vec2(cameraPos.x, cameraPos.z);
@@ -502,7 +484,7 @@ void LeafSystem::updateUniforms(uint32_t frameIndex, const glm::vec3& cameraPos,
     // Update displacement region uniform buffer
     glm::vec4 dispRegionData(displacementRegionCenter.x, displacementRegionCenter.y,
                              DISPLACEMENT_REGION_SIZE, 0.0f);
-    memcpy(displacementRegionBuffers.mappedPointers[frameIndex], &dispRegionData, sizeof(glm::vec4));
+    memcpy(displacementRegionBuffers.mapped(frameIndex), &dispRegionData, sizeof(glm::vec4));
 
     // Reset confetti spawn count after it's been sent to GPU
     confettiToSpawn = 0.0f;
@@ -513,9 +495,9 @@ void LeafSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInde
 
     // Update compute descriptor set to use this frame's uniform, displacement region, params, and tile info buffers
     DescriptorManager::SetWriter writer(getDevice(), particleSystem->getComputeDescriptorSet(writeSet));
-    writer.writeBuffer(3, uniformBuffers.buffers[frameIndex], 0, sizeof(CullingUniforms))
-          .writeBuffer(7, displacementRegionBuffers.buffers[frameIndex], 0, sizeof(glm::vec4))
-          .writeBuffer(10, paramsBuffers.buffers[frameIndex], 0, sizeof(LeafPhysicsParams));
+    writer.writeBuffer(3, uniformBuffers.get(frameIndex), 0, sizeof(CullingUniforms))
+          .writeBuffer(7, displacementRegionBuffers.get(frameIndex), 0, sizeof(glm::vec4))
+          .writeBuffer(10, paramsBuffers.get(frameIndex), 0, sizeof(LeafPhysicsParams));
 
     // Update tile info buffer to the correct frame's buffer (triple-buffered to avoid CPU-GPU sync)
     if (!tileInfoBuffers_.empty() && tileInfoBuffers_.at(frameIndex) != VK_NULL_HANDLE) {
@@ -538,7 +520,7 @@ void LeafSystem::recordResetAndCompute(vk::CommandBuffer cmd, uint32_t frameInde
     BarrierHelpers::indirectDrawAndVertexToComputeWrite(vkCmd);
 
     // Reset indirect buffer before compute dispatch
-    vkCmd.fillBuffer(indirectBuffers.buffers[writeSet], 0, sizeof(VkDrawIndirectCommand), 0);
+    vkCmd.fillBuffer(indirectBuffers.get(writeSet), 0, sizeof(VkDrawIndirectCommand), 0);
     BarrierHelpers::fillBufferToCompute(vkCmd);
 
     // Dispatch leaf compute shader
@@ -608,7 +590,7 @@ void LeafSystem::recordDraw(vk::CommandBuffer cmd, uint32_t frameIndex, float ti
                                            0, pushConstants);
 
     // Indirect draw: 4 vertices per leaf (quad)
-    vkCmd.drawIndirect(indirectBuffers.buffers[readSet], 0, 1, sizeof(VkDrawIndirectCommand));
+    vkCmd.drawIndirect(indirectBuffers.get(readSet), 0, 1, sizeof(VkDrawIndirectCommand));
 }
 
 void LeafSystem::advanceBufferSet() { particleSystem->advanceBufferSet(); }

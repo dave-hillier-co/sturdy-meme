@@ -9,6 +9,7 @@
 
 #include "PerFrameBuffer.h"
 #include "DynamicUniformBuffer.h"
+#include "vulkan/VmaBuffer.h"
 #include "Light.h"
 #include "UBOs.h"
 
@@ -43,10 +44,9 @@ public:
         return manager;
     }
 
-
-    ~GlobalBufferManager() {
-        cleanup();
-    }
+    // The owning VmaBuffers (declared below, before the public views) free
+    // every buffer; the views are plain handles.
+    ~GlobalBufferManager() = default;
 
     // Non-copyable, non-movable (stored via unique_ptr)
     GlobalBufferManager(GlobalBufferManager&&) = delete;
@@ -54,7 +54,18 @@ public:
     GlobalBufferManager(const GlobalBufferManager&) = delete;
     GlobalBufferManager& operator=(const GlobalBufferManager&) = delete;
 
-    // Per-frame buffer sets (public for descriptor binding)
+private:
+    // Owners. The public sets below are non-owning views over these so the
+    // readers of .buffers/.mappedPointers stay unchanged.
+    std::vector<VmaBuffer> uniformBufferOwners_;
+    VmaBuffer dynamicRendererUBOOwner_;
+    std::vector<VmaBuffer> lightBufferOwners_;
+    std::vector<VmaBuffer> boneMatricesBufferOwners_;
+    std::vector<VmaBuffer> snowBufferOwners_;
+    std::vector<VmaBuffer> cloudShadowBufferOwners_;
+
+public:
+    // Per-frame buffer sets (public for descriptor binding; non-owning views)
     BufferUtils::PerFrameBufferSet uniformBuffers;
     BufferUtils::PerFrameBufferSet lightBuffers;
     BufferUtils::PerFrameBufferSet boneMatricesBuffers;
@@ -84,112 +95,84 @@ public:
     size_t getCloudShadowBufferSize() const { return sizeof(CloudShadowUBO); }
 
 private:
+    // Take ownership of a freshly built per-frame set. The set keeps its
+    // handles and mapped pointers as a view; the owners free the buffers
+    // (the persistently mapped allocations need no explicit unmap).
+    static std::vector<VmaBuffer> adopt(VmaAllocator allocator, const BufferUtils::PerFrameBufferSet& set) {
+        std::vector<VmaBuffer> owners;
+        owners.reserve(set.buffers.size());
+        for (size_t i = 0; i < set.buffers.size(); ++i) {
+            owners.push_back(VmaBuffer::fromRaw(allocator, set.buffers[i], set.allocations[i]));
+        }
+        return owners;
+    }
+
+    static bool buildPerFrame(VmaAllocator allocator, uint32_t frameCount, vk::DeviceSize size,
+                              vk::BufferUsageFlags usage, BufferUtils::PerFrameBufferSet& outSet,
+                              std::vector<VmaBuffer>& outOwners) {
+        if (!BufferUtils::PerFrameBufferBuilder()
+                .setAllocator(allocator)
+                .setFrameCount(frameCount)
+                .setSize(size)
+                .setUsage(static_cast<VkBufferUsageFlags>(usage))
+                .build(outSet)) {
+            return false;
+        }
+        outOwners = adopt(allocator, outSet);
+        return true;
+    }
+
     bool initInternal(VmaAllocator allocator, vk::PhysicalDevice physicalDevice,
                       uint32_t frameCount, uint32_t maxBones) {
-        allocator_ = allocator;
         framesInFlight_ = frameCount;
         maxBoneMatrices_ = maxBones;
 
-        // Create uniform buffers
-        bool success = BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(frameCount)
-            .setSize(sizeof(UniformBufferObject))
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .build(uniformBuffers);
+        // On any early return the owners built so far free their buffers.
 
-        if (!success) {
+        // Create uniform buffers
+        if (!buildPerFrame(allocator, frameCount, sizeof(UniformBufferObject),
+                           vk::BufferUsageFlagBits::eUniformBuffer, uniformBuffers, uniformBufferOwners_)) {
             return false;
         }
 
         // Create dynamic renderer UBO for vegetation/weather systems
         // This avoids per-frame descriptor set updates by using dynamic offsets
-        success = BufferUtils::DynamicUniformBufferBuilder()
-            .setAllocator(allocator)
-            .setPhysicalDevice(physicalDevice)
-            .setFrameCount(frameCount)
-            .setElementSize(sizeof(UniformBufferObject))
-            .build(dynamicRendererUBO);
-
-        if (!success) {
-            BufferUtils::destroyBuffers(allocator, uniformBuffers);
+        if (!BufferUtils::DynamicUniformBufferBuilder()
+                .setAllocator(allocator)
+                .setPhysicalDevice(physicalDevice)
+                .setFrameCount(frameCount)
+                .setElementSize(sizeof(UniformBufferObject))
+                .build(dynamicRendererUBO)) {
             return false;
         }
+        dynamicRendererUBOOwner_ = VmaBuffer::fromRaw(allocator, dynamicRendererUBO.buffer,
+                                                      dynamicRendererUBO.allocation);
 
         // Create light buffers (SSBO)
-        success = BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(frameCount)
-            .setSize(sizeof(LightBuffer))
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-            .build(lightBuffers);
-
-        if (!success) {
-            BufferUtils::destroyBuffers(allocator, uniformBuffers);
-            BufferUtils::destroyBuffer(allocator, dynamicRendererUBO);
+        if (!buildPerFrame(allocator, frameCount, sizeof(LightBuffer),
+                           vk::BufferUsageFlagBits::eStorageBuffer, lightBuffers, lightBufferOwners_)) {
             return false;
         }
 
         // Create bone matrices buffers
-        success = BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(frameCount)
-            .setSize(sizeof(glm::mat4) * maxBones)
-            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
-            .build(boneMatricesBuffers);
-
-        if (!success) {
-            BufferUtils::destroyBuffers(allocator, uniformBuffers);
-            BufferUtils::destroyBuffer(allocator, dynamicRendererUBO);
-            BufferUtils::destroyBuffers(allocator, lightBuffers);
+        if (!buildPerFrame(allocator, frameCount, sizeof(glm::mat4) * maxBones,
+                           vk::BufferUsageFlagBits::eStorageBuffer, boneMatricesBuffers, boneMatricesBufferOwners_)) {
             return false;
         }
 
         // Create snow UBO buffers (binding 14)
-        success = BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(frameCount)
-            .setSize(sizeof(SnowUBO))
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .build(snowBuffers);
-
-        if (!success) {
-            BufferUtils::destroyBuffers(allocator, uniformBuffers);
-            BufferUtils::destroyBuffer(allocator, dynamicRendererUBO);
-            BufferUtils::destroyBuffers(allocator, lightBuffers);
-            BufferUtils::destroyBuffers(allocator, boneMatricesBuffers);
+        if (!buildPerFrame(allocator, frameCount, sizeof(SnowUBO),
+                           vk::BufferUsageFlagBits::eUniformBuffer, snowBuffers, snowBufferOwners_)) {
             return false;
         }
 
         // Create cloud shadow UBO buffers (binding 15)
-        success = BufferUtils::PerFrameBufferBuilder()
-            .setAllocator(allocator)
-            .setFrameCount(frameCount)
-            .setSize(sizeof(CloudShadowUBO))
-            .setUsage(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
-            .build(cloudShadowBuffers);
-
-        if (!success) {
-            BufferUtils::destroyBuffers(allocator, uniformBuffers);
-            BufferUtils::destroyBuffer(allocator, dynamicRendererUBO);
-            BufferUtils::destroyBuffers(allocator, lightBuffers);
-            BufferUtils::destroyBuffers(allocator, boneMatricesBuffers);
-            BufferUtils::destroyBuffers(allocator, snowBuffers);
+        if (!buildPerFrame(allocator, frameCount, sizeof(CloudShadowUBO),
+                           vk::BufferUsageFlagBits::eUniformBuffer, cloudShadowBuffers, cloudShadowBufferOwners_)) {
             return false;
         }
 
         return true;
-    }
-
-    void cleanup() {
-        if (!allocator_) return;  // Not initialized
-        BufferUtils::destroyBuffers(allocator_, uniformBuffers);
-        BufferUtils::destroyBuffer(allocator_, dynamicRendererUBO);
-        BufferUtils::destroyBuffers(allocator_, lightBuffers);
-        BufferUtils::destroyBuffers(allocator_, boneMatricesBuffers);
-        BufferUtils::destroyBuffers(allocator_, snowBuffers);
-        BufferUtils::destroyBuffers(allocator_, cloudShadowBuffers);
-        allocator_ = nullptr;
     }
 
 public:
@@ -310,7 +293,6 @@ public:
     }
 
 private:
-    VmaAllocator allocator_ = nullptr;
     uint32_t framesInFlight_ = 0;
     uint32_t maxBoneMatrices_ = 128;
 };

@@ -11,7 +11,7 @@
 #include "DescriptorManager.h"
 #include "InitContext.h"
 #include "VmaImage.h"
-#include "PerFrameBuffer.h"
+#include "core/vulkan/VmaBuffer.h"
 #include "interfaces/ICloudShadowControl.h"
 
 // Cloud Shadow System
@@ -69,7 +69,7 @@ public:
     static std::unique_ptr<CloudShadowSystem> create(const InitInfo& info);
     static std::unique_ptr<CloudShadowSystem> create(const InitContext& ctx, vk::ImageView cloudMapLUTView, vk::Sampler cloudMapLUTSampler);
 
-    ~CloudShadowSystem();
+    ~CloudShadowSystem() = default;
 
     // Non-copyable, non-movable
     CloudShadowSystem(const CloudShadowSystem&) = delete;
@@ -84,8 +84,8 @@ public:
                       const glm::vec3& cameraPos);
 
     // Accessors for shader binding
-    vk::ImageView getShadowMapView() const { return shadowMapView_ ? **shadowMapView_ : VK_NULL_HANDLE; }
-    vk::Sampler getShadowMapSampler() const { return shadowMapSampler_ ? **shadowMapSampler_ : VK_NULL_HANDLE; }
+    vk::ImageView getShadowMapView() const { return shadowMapView_ ? **shadowMapView_ : vk::ImageView{}; }
+    vk::Sampler getShadowMapSampler() const { return shadowMapSampler_ ? **shadowMapSampler_ : vk::Sampler{}; }
 
     // Get the world-to-shadow-UV matrix for sampling in fragment shaders
     const glm::mat4& getWorldToShadowUV() const { return worldToShadowUV; }
@@ -116,30 +116,34 @@ private:
 
     void updateWorldToShadowMatrix(const glm::vec3& sunDir, const glm::vec3& cameraPos);
 
-    vk::Device device = VK_NULL_HANDLE;
-    VmaAllocator allocator = VK_NULL_HANDLE;
+    vk::Device device{};
+    VmaAllocator allocator = nullptr;
     DescriptorManager::Pool* descriptorPool = nullptr;
     std::string shaderPath;
     uint32_t framesInFlight = 0;
     const vk::raii::Device* raiiDevice_ = nullptr;
 
     // External resources (not owned)
-    vk::ImageView cloudMapLUTView = VK_NULL_HANDLE;
-    vk::Sampler cloudMapLUTSampler = VK_NULL_HANDLE;
+    vk::ImageView cloudMapLUTView{};
+    vk::Sampler cloudMapLUTSampler{};
+
+    // Members are declared in dependency order so reverse-order destruction
+    // releases the pipeline first and the shadow map image last.
 
     // Cloud shadow map (R16F - stores shadow attenuation 0=full shadow, 1=no shadow)
-    ManagedImage shadowMap_;  // VMA-managed image (keep as-is)
+    ManagedImage shadowMap_;  // VMA-managed image
     std::optional<vk::raii::ImageView> shadowMapView_;
     std::optional<vk::raii::Sampler> shadowMapSampler_;
+
+    // Uniform buffers (per frame, persistently mapped)
+    std::vector<ManagedBuffer> uniformBuffers_;
+    std::vector<void*> uniformMapped_;
 
     // Compute pipeline (RAII-managed)
     std::optional<vk::raii::DescriptorSetLayout> descriptorSetLayout_;
     std::optional<vk::raii::PipelineLayout> pipelineLayout_;
     std::optional<vk::raii::Pipeline> computePipeline_;
-    std::vector<vk::DescriptorSet> descriptorSets;
-
-    // Uniform buffers (per frame)
-    BufferUtils::PerFrameBufferSet uniformBuffers;
+    std::vector<vk::DescriptorSet> descriptorSets;  // Pool-owned; released with the pool
 
     // World to shadow UV matrix
     glm::mat4 worldToShadowUV = glm::mat4(1.0f);
@@ -157,5 +161,4 @@ private:
     bool shadowMapInitialized_ = false;  // First transition may discard; later ones must preserve quadrants
 
     bool initInternal(const InitInfo& info);
-    void cleanup();
 };

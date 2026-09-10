@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <optional>
 #include <glm/glm.hpp>
 #include "core/interfaces/ITimeSystem.h"
 
@@ -90,6 +91,14 @@ public:
     void setEclipseAmount(float amount) override { eclipseAmount = glm::clamp(amount, 0.0f, 1.0f); }
     float getEclipseAmount() const override { return eclipseAmount; }
 
+    // Deterministic capture: replace the wall clock with a fixed step, so the
+    // frame time and elapsed time that reach the shaders depend only on the
+    // frame number. Used by the parity-oracle reference capture
+    // (src/scene/ReferenceCapture.h); unset (the default) is the wall clock and
+    // update() behaves exactly as it always did.
+    void setFixedTimeStep(std::optional<float> seconds) { fixedTimeStep = seconds; }
+    std::optional<float> getFixedTimeStep() const { return fixedTimeStep; }
+
     // Access to raw timing values (for systems that need more control)
     float getDeltaTime() const { return lastDeltaTime; }
     float getElapsedTime() const { return lastElapsedTime; }
@@ -99,6 +108,9 @@ private:
     using TimePoint = std::chrono::time_point<Clock>;
 
     // Frame timing state
+    // Fixed-step override for deterministic capture (nullopt = wall clock)
+    std::optional<float> fixedTimeStep{};
+    float fixedElapsedTime = 0.0f;
     bool initialized = false;
     TimePoint startTime;
     TimePoint lastFrameTime;

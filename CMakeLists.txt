@@ -49,6 +49,8 @@ set(SOURCES
     src/scene/SceneMaterial.cpp
     src/scene/SceneCollection.cpp
     src/scene/Camera.cpp
+    src/scene/SceneScriptRef.cpp
+    src/scene/ReferenceCapture.cpp
     src/scene/Transform.cpp
     src/scene/InputSystem.cpp
     # NPC

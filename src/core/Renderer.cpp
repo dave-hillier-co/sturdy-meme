@@ -223,7 +223,11 @@ bool Renderer::render(const Camera& camera) {
     // Automation hook: SCREENSHOT_AFTER_FRAMES=N captures a screenshot once,
     // N rendered frames after startup (for scripted visual verification).
     if (autoScreenshotFrame_ != 0 && ++renderedFrameCount_ == autoScreenshotFrame_) {
-        requestScreenshot();
+        if (autoScreenshotPath_.empty()) {
+            requestScreenshot();
+        } else {
+            requestScreenshotTo(autoScreenshotPath_);
+        }
     }
 
     FrameResult result = frameExecutor_->execute(
@@ -246,6 +250,20 @@ void Renderer::requestScreenshot() {
             vulkanContext_->getAllocator(), dir ? dir : "screenshots");
     }
     screenshotCapture_->request();
+}
+
+void Renderer::requestScreenshotTo(std::filesystem::path path) {
+    if (!screenshotCapture_) {
+        const char* dir = SDL_getenv("SCREENSHOT_DIR");
+        screenshotCapture_ = std::make_unique<ScreenshotCapture>(
+            vulkanContext_->getAllocator(), dir ? dir : "screenshots");
+    }
+    screenshotCapture_->requestTo(std::move(path));
+}
+
+void Renderer::setAutoScreenshot(uint64_t afterFrames, std::filesystem::path path) {
+    autoScreenshotFrame_ = afterFrames;
+    autoScreenshotPath_ = std::move(path);
 }
 
 vk::CommandBuffer Renderer::buildFrame(const Camera& camera, uint32_t imageIndex, uint32_t frameIndex) {

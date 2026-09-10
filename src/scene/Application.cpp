@@ -1109,16 +1109,29 @@ void Application::runTerrainHeightDiagnostic() {
     SDL_Log("Press 9 again to re-run, spheres visible in debug mode");
 }
 
-void Application::run() {
+void Application::run() { run(RunOptions{}); }
+
+void Application::run(const RunOptions& options) {
     buildDebugCommands();
+
+    if (options.hideGui && gui_) {
+        gui_->setVisible(false);
+    }
 
     auto lastTime = std::chrono::high_resolution_clock::now();
     float smoothedFps = 60.0f;
+    uint64_t loopFrames = 0;
 
     while (running) {
         auto currentTime = std::chrono::high_resolution_clock::now();
         float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
         lastTime = currentTime;
+
+        // Deterministic capture: the frame number, not the wall clock, decides
+        // how far the world advances this iteration.
+        if (options.fixedDeltaSeconds) {
+            deltaTime = *options.fixedDeltaSeconds;
+        }
 
         // Store for GUI
         lastDeltaTime = deltaTime;
@@ -1438,6 +1451,13 @@ void Application::run() {
         snprintf(title, sizeof(title), "Vulkan Game - FPS: %.0f | Time: %02d:%02d | %s (Tab to toggle)",
                  smoothedFps, hours, minutes, modeStr);
         SDL_SetWindowTitle(window, title);
+
+        ++loopFrames;
+        if (options.exitAfterFrames && loopFrames >= *options.exitAfterFrames) {
+            SDL_Log("Run: stopping after %llu frames as requested",
+                    static_cast<unsigned long long>(loopFrames));
+            running = false;
+        }
     }
 
     renderer_->waitIdle();

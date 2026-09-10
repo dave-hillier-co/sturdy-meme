@@ -35,7 +35,7 @@ std::string makeScreenshotPath(const std::string& outputDir) {
 }
 
 void encodeAndSave(VmaBuffer buffer, vk::Extent2D extent, vk::Format format,
-                   std::string outputDir) {
+                   std::string outputDir, std::filesystem::path explicitPath) {
     const uint32_t width = extent.width;
     const uint32_t height = extent.height;
     const size_t pixelCount = static_cast<size_t>(width) * height;
@@ -58,7 +58,19 @@ void encodeAndSave(VmaBuffer buffer, vk::Extent2D extent, vk::Format format,
     buffer.unmap();
     buffer.reset();
 
-    std::string path = makeScreenshotPath(outputDir);
+    std::string path;
+    if (explicitPath.empty()) {
+        path = makeScreenshotPath(outputDir);
+    } else {
+        // Caller-chosen name (parity-oracle reference capture): create the
+        // parent directory and overwrite rather than uniquifying, so a
+        // re-capture replaces the file it is meant to replace.
+        std::error_code ec;
+        if (explicitPath.has_parent_path()) {
+            std::filesystem::create_directories(explicitPath.parent_path(), ec);
+        }
+        path = explicitPath.string();
+    }
     unsigned error = lodepng::encode(path, rgba, width, height);
     if (error) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Screenshot: PNG encode failed for %s: %s",
@@ -80,6 +92,10 @@ void ScreenshotCapture::recordIfRequested(vk::CommandBuffer cmd, vk::Image swapc
                                           vk::Extent2D extent, vk::Format format,
                                           uint32_t frameIndex) {
     if (!requested_.exchange(false)) return;
+    // Take the requested path with the flag, so a dropped or failed request
+    // cannot leave it armed for the next (possibly unrelated) capture.
+    std::filesystem::path outputPath = std::move(requestedPath_);
+    requestedPath_.clear();
     if (pending_) {
         // Previous capture not read back yet; drop this request rather than queue.
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Screenshot: capture already in flight, ignoring request");
@@ -131,6 +147,7 @@ void ScreenshotCapture::recordIfRequested(vk::CommandBuffer cmd, vk::Image swapc
                         vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, toPresent);
 
     pending_ = true;
+    pendingPath_ = std::move(outputPath);
     pendingFrameIndex_ = frameIndex;
     pendingExtent_ = extent;
     pendingFormat_ = format;
@@ -146,5 +163,7 @@ void ScreenshotCapture::pollCompleted(uint32_t frameIndex) {
     // Hand the staging buffer to the worker: swizzle + PNG encode happen
     // off the presenting thread, and the buffer is destroyed there.
     saveThread_ = std::thread(encodeAndSave, std::move(stagingBuffer_),
-                              pendingExtent_, pendingFormat_, outputDir_);
+                              pendingExtent_, pendingFormat_, outputDir_,
+                              std::move(pendingPath_));
+    pendingPath_.clear();
 }

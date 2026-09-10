@@ -30,6 +30,12 @@ public:
     void setYaw(float newYaw);
     void setPitch(float newPitch);
     void setRotation(float yaw, float pitch);
+    // Projection overrides used by the parity-oracle scene-script path
+    // (src/scene/SceneScriptRef.h), which has to reproduce a pose exactly.
+    // setFov pins every FOV state, including the smoother's target, so the
+    // dynamic-FOV blend in updateThirdPerson cannot drift back to the default.
+    void setFov(float fovYDeg);
+    void setClipPlanes(float nearPlane, float farPlane);
     void moveForward(float delta);
     void moveRight(float delta);
     void moveUp(float delta);

@@ -18,6 +18,14 @@ TimingData TimeSystem::update() {
     float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
     lastFrameTime = currentTime;
 
+    // Deterministic capture: the same frame number must produce the same time,
+    // so both values advance by a fixed step instead of by the wall clock.
+    if (fixedTimeStep) {
+        deltaTime = *fixedTimeStep;
+        fixedElapsedTime += deltaTime;
+        elapsedTime = fixedElapsedTime;
+    }
+
     // Store for accessor methods
     lastDeltaTime = deltaTime;
     lastElapsedTime = elapsedTime;

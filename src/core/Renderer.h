@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.hpp>
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
+#include <filesystem>
 #include <vector>
 #include <string>
 #include <functional>
@@ -153,6 +154,15 @@ public:
     // runs on a worker thread.
     void requestScreenshot();
 
+    // Same, but landing at an exact path instead of a timestamped name.
+    void requestScreenshotTo(std::filesystem::path path);
+
+    // Arm the SCREENSHOT_AFTER_FRAMES hook from code rather than the
+    // environment, with an explicit output path. Used by the parity-oracle
+    // reference capture (src/scene/ReferenceCapture.h) so a reference image is
+    // taken after a known frame number rather than at a keypress.
+    void setAutoScreenshot(uint64_t afterFrames, std::filesystem::path path);
+
     // Notify renderer that window lost focus (user clicked another app)
     // On macOS, this can cause compositor to cache stale content
     void notifyWindowFocusLost() { windowFocusLost_ = true; }
@@ -284,6 +294,7 @@ private:
     std::unique_ptr<ScreenshotCapture> screenshotCapture_;
     uint64_t renderedFrameCount_ = 0;
     uint64_t autoScreenshotFrame_ = 0;  // from SCREENSHOT_AFTER_FRAMES; 0 = disabled
+    std::filesystem::path autoScreenshotPath_;  // empty = timestamped name
 
     // Resize coordinator (orchestrates resize across subsystems)
     std::unique_ptr<ResizeCoordinator> resizeCoordinator_;

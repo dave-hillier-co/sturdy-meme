@@ -61,6 +61,18 @@ void Camera::setRotation(float yaw, float pitch) {
     updateVectors();
 }
 
+void Camera::setFov(float fovYDeg) {
+    fov_ = fovYDeg;
+    baseFov_ = fovYDeg;
+    currentFov_ = fovYDeg;
+    targetFov_ = fovYDeg;
+}
+
+void Camera::setClipPlanes(float nearPlane, float farPlane) {
+    nearPlane_ = nearPlane;
+    farPlane_ = farPlane;
+}
+
 void Camera::moveForward(float delta) {
     position_ += front_ * delta;
 }

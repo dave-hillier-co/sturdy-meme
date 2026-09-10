@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 #include <atomic>
+#include <filesystem>
 #include <string>
 #include <thread>
 
@@ -32,6 +33,15 @@ public:
     // Flag a capture for the next recorded frame. Thread-safe.
     void request() { requested_ = true; }
 
+    // Flag a capture that lands at an exact path instead of a timestamped name
+    // in outputDir_. Used by the parity-oracle reference capture
+    // (src/scene/ReferenceCapture.h), which needs a name the caller chose.
+    // Call from the render path: the path is read when the frame is recorded.
+    void requestTo(std::filesystem::path path) {
+        requestedPath_ = std::move(path);
+        requested_ = true;
+    }
+
     // Record the swapchain-image -> staging-buffer copy if a capture is
     // requested. The image must be in ePresentSrcKHR layout (i.e. call after
     // the swapchain render pass, before cmd.end()).
@@ -47,9 +57,11 @@ private:
     std::string outputDir_;
 
     std::atomic<bool> requested_{false};
+    std::filesystem::path requestedPath_;  // empty = timestamped name in outputDir_
 
     // Pending GPU->staging copy, consumed when its frame slot recycles.
     bool pending_ = false;
+    std::filesystem::path pendingPath_;
     uint32_t pendingFrameIndex_ = 0;
     vk::Extent2D pendingExtent_{};
     vk::Format pendingFormat_ = vk::Format::eUndefined;

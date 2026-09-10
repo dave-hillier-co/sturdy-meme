@@ -40,11 +40,34 @@ public:
     ~Application() { shutdown(); }  // shutdown() is idempotent and safe after partial init
 
     bool init(const std::string& title, int width, int height);
+
+    // Options for one run of the main loop. The defaults reproduce the
+    // interactive loop exactly, so run() with no arguments is unchanged. They
+    // exist so the parity-oracle reference capture
+    // (src/scene/ReferenceCapture.h) can drive THIS loop deterministically
+    // instead of a second loop existing beside it.
+    struct RunOptions {
+        // Pin the frame delta instead of reading the wall clock, so physics,
+        // animation and camera smoothing depend only on the frame number.
+        std::optional<float> fixedDeltaSeconds{};
+        // Stop after this many main-loop iterations (each one calls render()).
+        std::optional<uint64_t> exitAfterFrames{};
+        // Suppress the debug GUI overlay, which is part of the presented image
+        // and whose layout is restored from imgui.ini.
+        bool hideGui = false;
+    };
+
     void run();
+    void run(const RunOptions& options);
     void shutdown();
 
     // Access renderer for command line toggle configuration
     Renderer& getRenderer() { return *renderer_; }
+
+    // Access the camera so a parity-oracle scene script can set its pose
+    // (src/scene/SceneScriptRef.h). Use only after init(): setupWorld()
+    // places the camera itself while the loading screen is still presenting.
+    Camera& getCamera() { return camera; }
 
 private:
     // Heavy world setup after renderer init (terrain preloads, physics tiles,

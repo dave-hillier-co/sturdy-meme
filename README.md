@@ -1,3 +1,5 @@
+> **This repository is archived.** Development has moved to [solent](https://github.com/dave-hillier-co/solent), a from-scratch rebuild of this engine. Solent is currently private; it will be opened up when it is ready. This repo is kept read-only for reference.
+
 # Vulkan Game
 
 A simple Vulkan-based 3D game rendering a textured cube with camera controls.
